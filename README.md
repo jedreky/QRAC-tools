@@ -4,7 +4,7 @@ A Quantum Random Access Code, mostly known by its acronym QRAC, is a task in whi
 
 This program encounters the maximum value of a QRAC by performing a see-saw optimization. Encountering the 'maximum value' of a QRAC means that we aim to maximize the functional associated with it.
 
-The main function of this code is implemented in find_QRAC_value(n, d, seeds), in which it is possible to input n, d, and the number of seeds to be used in the see-saw optimization.
+The main function of this code is implemented in 'find_QRAC_value', in which it is possible to input n, d, and the number of seeds to be used in the see-saw optimization.
 
 Reference
 ----------
