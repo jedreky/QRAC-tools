@@ -290,7 +290,7 @@ M_vars: a list of 'out' matrices of size dim x dim.
     # Defining objective function:
     prob_guess = 0
     for i in range(0, out):
-        prob_guess += (1/(n*out**n)) * cp.trace(M_vars[i]@opt_preps_sum[i])
+        prob_guess += (1 / (n * out**n)) * cp.trace(M_vars[i] @ opt_preps_sum[i])
 
     # Defining constraints:
     constr = []
@@ -317,17 +317,21 @@ M_vars: a list of 'out' matrices of size dim x dim.
 ############################################### MAIN ###############################################
 
 def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_status: [bool] =
-                    True, PROB_BOUND: [float] = 1e-10, MEAS_BOUND: [float] = 5 * 1e-7):
+                    True, PROB_BOUND: [float] = 1e-9, MEAS_BOUND: [float] = 5e-7):
 
     """
 Main function. Here I perform a see-saw optimization for the nˆ(dim) --> 1 QRAC. This function can
 be described in a few elementary steps, as follows:
 
-    1. Create a set of n 'dim'-dimensional random measurements with 'generate_random_measurements'.
+    1. Create a set of n random measurements with 'out' outcomes acting dimension 'dim' with 'genera
+    te_random_measurements'.
     2. For this set of measurements, find the set optimal preparations using 'find_opt_prep'.
     3. Optimize the measurements for the set of optimal preparations found in step 2 using 'find_opt
     _meas'.
-    4. Check if the obtained solution to the problem is converging. If not, return to step 2.
+    4. Check if the variables 'prob_value' and 'M' are converging. If not, return to step 2 until
+    the difference between 'previous_prob_value' and 'prob_value' is smaller than PROB_BOUND. Also,
+    the loop should terminate either when 'max_norm_difference' is smaller than MEAS_BOUND or when
+    the number of iterations is bigger than 'iterations.
 
 This function also checks if the obtained optimal measurements are MUBs by activating 'determine_mea
 s_status function.
@@ -341,7 +345,7 @@ dim: an integer.
 seeds: an integer.
     Represents the number of random seeds as the starting point of the see-saw algorithm.
 out: an integer. [optional]
-    The number of outcomes for the measurements. If no value is attributed to 'outim, then out = dim.
+    The number of outcomes for the measurements. If no value is attributed to 'out', then out = dim.
 meas_status: True or False. True by default. [optional]
     If true, it activates the function determine_meas_status for details about the optimized measu-
     rements.
@@ -361,6 +365,9 @@ max_prob_value: a float
     # Starting variables max_prob_value and M_optimal.
     max_prob_value = 0
     M_optimal = 0
+
+    # Maximum number of iterations for the see-saw loop.
+    iterations = 100
 
     # If no value is attributed for the number of outcomes, then I set out = dim.
     if out == None:
@@ -385,10 +392,14 @@ max_prob_value: a float
         previous_M = [[np.zeros((dim, dim), dtype = float) for i in range(0, out)] for j in range(0,
         n)]
         max_norm_difference = 1
-        j = 0
-        while (abs(previous_prob_value - prob_value) > PROB_BOUND) or max_norm_difference > MEAS_BOUND:
-        # prob_value converges faster than the measurements, so that the stopping condition for
-        # prob_value can be smaller.
+        iter_count = 0
+
+        # The variable 'prob_value' converges faster than 'M', so that the stopping condition for
+        # 'prob_value' can be smaller. For the measurements, we either stop when 'max_norm_differen-
+        # ce' is smaller than MEAS_BOUND or when the number of iterations is bigger than 'itera-
+        # tions'.
+        while (abs(previous_prob_value - prob_value) > PROB_BOUND) or (max_norm_difference >
+        MEAS_BOUND and iter_count < iterations):
 
             previous_prob_value = prob_value
 
@@ -403,15 +414,21 @@ max_prob_value: a float
 
             max_norm_difference = max(norm_difference)
             previous_M = M
+            iter_count += 1
+            print(iter_count, abs(previous_prob_value - prob_value), max_norm_difference)
+
+        if iter_count >= iterations:
+            print('The measurements have not converged below the MEAS_BOUND for the seed #'\
+            + str(seeds) +'.\n')
 
         # Selecting the largest problem value from all distinct random seeds.
-        if (prob_value > max_prob_value):
+        if prob_value > max_prob_value:
             max_prob_value = prob_value
             M_optimal = M
 
     # meas_status is True by default.
     if meas_status:
-        determine_meas_status(M_optimal, dim, n, out)
+       determine_meas_status(M_optimal, dim, n, out)
 
     return max_prob_value
 
@@ -478,6 +495,7 @@ Features about the input measurement M.
             if nalg.norm(M[i][j] @ M[i][j] - M[i][j]) > BOUND:
                 flag = False
                 print("Measurement operators are not projective!\n")
+                return
 
     # Checking if the measurements are constructed out of Mutually Unbiased Bases.
     if flag:
@@ -500,9 +518,9 @@ ck appendix II of the supplementary material of the reference for details.
 Inputs
 ------
 P: a list with 'out' matrices of size dim x dim.
-    A 'dim'-dimensional measurement with 'out' outcomes.
+    A measurement with 'out' outcomes acting on dimension 'dim'.
 Q: a list with 'out' matrices of size dim x dim.
-    A 'dim'-dimensional measurement with 'out' outcomes.
+    Another measurement with 'out' outcomes acting on dimension 'dim'.
 out: an integer.
     out represents the number of outcomes of the measurements.
 precision: True or False. False by default.
