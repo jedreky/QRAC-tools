@@ -217,7 +217,7 @@ out: an integer.
 
 Output
 ------
-prob_sum: a float.
+prob sum: a float
     It contains the value of the optimization of the "average success probability" after a single
     step of the see-saw algorithm.
 M: a list of lists whose elements are matrices of size dim x dim.
@@ -357,10 +357,9 @@ MEAS_BOUND: a float. [optional]
     The same criterion as in PROB_BOUND but for the norms of the measurement operators in the varia-
     ble M.
 
-Outputs
--------
-max_prob_value: a float
-    The optimized value of the 'average success probability' for the nˆ(dim) --> 1 QRAC.
+Output
+------
+The optimized value of the 'average success probability' for the nˆ(dim) --> 1 QRAC.
     """
     # Starting variables max_prob_value and M_optimal.
     max_prob_value = 0
@@ -372,6 +371,8 @@ max_prob_value: a float
     # If no value is attributed for the number of outcomes, then I set out = dim.
     if out == None:
         out = dim
+
+    print('')
 
     for i in range(0, seeds):
 
@@ -415,22 +416,25 @@ max_prob_value: a float
             max_norm_difference = max(norm_difference)
             previous_M = M
             iter_count += 1
-            print(iter_count, abs(previous_prob_value - prob_value), max_norm_difference)
 
+        # Print message that only 'prob_value' converged.
         if iter_count >= iterations:
             print('The measurements have not converged below the MEAS_BOUND for the seed #'\
-            + str(seeds) +'.\n')
+            + str(i + 1) +'.')
 
         # Selecting the largest problem value from all distinct random seeds.
         if prob_value > max_prob_value:
             max_prob_value = prob_value
             M_optimal = M
+            seed_number = i
+
+    # Just printing the max_prob_value.
+    print('The optimized value for the ' + str(n) + 'ˆ' + str(out) + '-->1 QRAC is '\
+    + str(prob_value.round(10))+ ', found by the seed #' + str(seed_number + 1) +'.')
 
     # meas_status is True by default.
     if meas_status:
        determine_meas_status(M_optimal, dim, n, out)
-
-    return max_prob_value
 
 def determine_meas_status(M, dim, n, out):
 
@@ -463,6 +467,8 @@ Features about the input measurement M.
     # there is no sense on checking if they can be constructed out of MUBs.
     flag = True
 
+    print('')
+
     # Checking if the measurement operators are Hermitian.
     for i in range(0, n):
         for j in range(0, out):
@@ -487,15 +493,26 @@ Features about the input measurement M.
     # Now checking if all of the measurement operators are rank-one.
     if (rank == np.ones((n, out), dtype = np.int8)).all() != True:
         flag = False
-        print("Measurement operators are not rank-one!\n")
+        print("Measurement operators are not rank-one!")
+
+        # Printing the ranks of the measurement operators.
+        line = 0
+        for i in rank:
+            print ('M[' + str(line) + '] ranks: ','  '.join(map(str, i)))
+            line += 1
+
+    # Boolean variable for a line break.
+    break_line = True
 
     # Checking if the measurement operators are projective.
     for i in range(0, n):
         for j in range(0, out):
             if nalg.norm(M[i][j] @ M[i][j] - M[i][j]) > BOUND:
+                if break_line:
+                    print('')
+                    break_line = False
                 flag = False
-                print("Measurement operators are not projective!\n")
-                return
+                print('Measurement operator M[' + str(i) + '][' + str(j) + '] is not projective!')
 
     # Checking if the measurements are constructed out of Mutually Unbiased Bases.
     if flag:
@@ -503,12 +520,13 @@ Features about the input measurement M.
                 for j in range(i + 1, n):
                     status = check_if_MUBs(M[i], M[j], out)
                     if status['boolean']:
-                        print('M[' + str(i) + '] and M[' + str(j) + '] are mutually unbiased. \n')
+                        print('M[' + str(i) + '] and M[' + str(j) + '] are mutually unbiased. The '\
+                        'maximum norm difference is ' + str(status['max error'].round(8)) + '.')
                     else:
                         print('M[' + str(i) + '] and M[' + str(j) + '] are not mutually unbiased. '\
-                        'The maximum error is ' + str(status['max error'].round(8)) + '\n')
+                        'The maximum norm difference is ' + str(status['max error'].round(8)) + '.')
 
-def check_if_MUBs(P, Q, out):
+def check_if_MUBs(P, Q, out, MUB_BOUND = 1e-5):
 
     """
 This function works jointly with 'determine_meas_status' function. It simply gets two 'dim'-dimen-
@@ -523,20 +541,17 @@ Q: a list with 'out' matrices of size dim x dim.
     Another measurement with 'out' outcomes acting on dimension 'dim'.
 out: an integer.
     out represents the number of outcomes of the measurements.
-precision: True or False. False by default.
-    If True, instead of producing a binary 0 or 1, it recovers the maximum precision with which we
-    can say that a pair of measurements are MUBs.
+MUB_BOUND: a float.
+    If PQP-P < MUB_BOUND, then the equation PQP = P is considered satisfied and the measurements P
+    and Q are considered mutually unbiased.
 
 Output
 ------
 status: a dictionary with two entries. A boolean variable and a float.
-    The first key of this dictionary is named 'boolean'. If it is 'True', then there is no second
-    key. If 'boolean' is 'False', the maximum norm error by which P and Q cannot be considered MUBs
-    is calculated and attributed to the key 'max error'.
-
-    In other words, if P and Q can be constructed out of MUBs, it is known that maximum norm error
-    is smaller than BOUND = 1e-5. If this is the case, the code ignores the error. If not, the error
-    is computed and printed to the user.
+    The first key of this dictionary is named 'boolean'. If 'True', P and Q are considered mutually
+    unbiased up to the numerical precision of MUB_BOUND. The second key is named 'max_error' and
+    contains the maximum norm difference by which the measurement operators of P and Q do not satis-
+    fy the equations PQP = P and QPQ = Q.
 
 Reference
 ---------
@@ -544,25 +559,21 @@ Reference
 metric informationally complete measurements in Bell experiments, Sci. Adv., vol. 7, issue 7. DOI:
 10.1126/sciadv.abc3847.
     """
-    # Defining a proper bound to accept the polynomial equation of P and Q as satisfied.
-    BOUND = 1e-5
-
     status = {'boolean': True}
 
+    errors = []
     for i in range(0, out):
         for j in range(0, out):
-            if nalg.norm(out * P[i] @ Q[j] @ P[i] - P[i]) > BOUND:
-                status['boolean'] = False
-            if nalg.norm(out * Q[j] @ P[i] @ Q[j] - Q[j]) > BOUND:
+
+            errorP = nalg.norm(out * P[i] @ Q[j] @ P[i] - P[i])
+            errorQ = nalg.norm(out * Q[j] @ P[i] @ Q[j] - Q[j])
+
+            errors.append(errorP)
+            errors.append(errorQ)
+
+            if errorP > MUB_BOUND or errorQ > MUB_BOUND:
                 status['boolean'] = False
 
-    # The same as "if status is False"
-    if not status['boolean']:
-        errors = []
-        for i in range(0, out):
-            for j in range(0, out):
-                errors.append(nalg.norm(out * P[i] @ Q[j] @ P[i] - P[i]))
-                errors.append(nalg.norm(out * Q[j] @ P[i] @ Q[j] - Q[j]))
-        status['max error'] = max(errors)
+    status['max error'] = max(errors)
 
     return status
