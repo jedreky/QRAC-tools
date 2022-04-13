@@ -5,7 +5,14 @@ A Quantum Random Access Code, mostly known by its acronym QRAC, is a task in whi
 
 This program encounters the maximum value of a QRAC by performing a _see-saw_ optimization. Encountering the maximum value of a QRAC means that we aim to maximize the functional associated with it.
 
-The main function of this code is implemented in 'find_QRAC_value', in which it is possible to input n, d, and the number of seeds to be used in the see-saw optimization. In order to run this script the user need to have the packages `numpy`, `scipy`, `itertools` and `cvxpy` installed. We strongly recommend the use of the solver __MOSEK__, which requires a license that can be obtained [here](https://www.mosek.com/products/academic-licenses/).
+The main function of this code is implemented in 'find_QRAC_value', in which it is possible to input n, d, and the number of seeds to be used in the see-saw optimization. In order to run this script the user need to have the packages `numpy`, `scipy`, and `cvxpy` installed. Moreover, while `cvxpy` comes with some pre-installed solvers, we have not found them particularly reliable. We strongly recommend that you install and solver __MOSEK__, which requires a license that can be obtained [here](https://www.mosek.com/products/academic-licenses/).
+  
+The packages mentioned above can be installed by running:
+
+```
+pip install -r requirements.txt
+```
+  
 </div>
 
 Reference
