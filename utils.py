@@ -150,7 +150,7 @@ def find_opt_prep(M, dim, n, out):
 
     # The variable 'indexes' list all the possible tuples of size n with elements ranging from 0 to
     # 'out' - 1.
-    indexes = product([i for i in range(0, out)], repeat=n)
+    indexes = product(range(0, out), repeat = n)
 
     # This for runs over all n-tuples of 'indexes'. In practice, it is a for nested n times.
     for i in indexes:
@@ -244,7 +244,7 @@ def find_opt_meas(opt_preps, dim, n, out):
         opt_preps_sum = []
         for j in range(0, out):
 
-            indexes = product([i for i in range(0, out)], repeat=n)
+            indexes = product(range(0, out), repeat = n)
 
             # Summing through all indexes of 'indexes' but the i-th.
             indexes_subset = [k for k in indexes if k[i] == j]
@@ -326,17 +326,8 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
 ############################################### MAIN ###############################################
 
-
-def find_QRAC_value(
-    n: [int],
-    dim: [int],
-    seeds: [int],
-    out: [int] = None,
-    meas_status: [bool] = True,
-    PROB_BOUND: [float] = 1e-9,
-    MEAS_BOUND: [float] = 5e-7,
-):
-
+def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_status: [bool] =
+                    True, PROB_BOUND: [float] = 1e-9, MEAS_BOUND: [float] = 5e-7, bias = 'RAC'):
     """
     Main function. Here I perform a see-saw optimization for the nˆ(dim) --> 1 QRAC. This function can
     be described in a few elementary steps, as follows:
@@ -639,3 +630,21 @@ def check_if_MUBs(P, Q, out, MUB_BOUND=1e-5):
     status["max error"] = max(errors)
 
     return status
+
+def generate_bias(n, out, bias = 'RAC'):
+
+    alpha = {}
+
+    if bias == 'RAC':
+
+        indexes = product(product(range(0, out), repeat = n + 1), range(n))
+
+        for i in indexes:
+
+            if i[0][n] == i[0][i[1]]:
+                alpha[i] = 1 / (n * out**n)
+
+            else:
+                alpha[i] = 0
+
+    return alpha
