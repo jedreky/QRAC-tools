@@ -3,22 +3,25 @@ This file contains the main functions for optimizing an nˆ(dim) --> 1 QRAC. The
 accessed by the command 'find_QRAC_value'.
 """
 
-from itertools import product
-
 import cvxpy as cp
 import numpy as np
 import numpy.linalg as nalg
 from numpy.random import rand
 from scipy.linalg import sqrtm
+from itertools import product
 
 
 def generate_random_measurements(dim, out):
 
     """
-    This function generates a random measurement with 'out' outcomes and dimension 'dim'. The first step
-    is to generate 'out' random complex operators named 'random_op'. Then, it transforms these operators
-    into a positive semidefinite matrix and stores them in the list 'partial_meas'. By rescaling 'parti-
-    al_sum' using the sum of all 'random_herm' operators, it can produce a random measurement.
+    Generate random measurements
+    ----------------------------
+
+    This function generates a random measurement with 'out' outcomes and dimension 'dim'. The first
+    step is to generate 'out' random complex operators named 'random_op'. Then, it transforms these
+    operators into a positive semidefinite matrix and stores them in the list 'partial_meas'. By re-
+    scaling 'partial_sum' using the sum of all 'random_herm' operators, it can produce a random mea-
+    surement.
 
     Input
     -----
@@ -30,7 +33,8 @@ def generate_random_measurements(dim, out):
     Output
     ------
     measurement: a list of 'out' matrices of size dim x dim.
-        The variable measurement represent a random measurement with 'out' outcomes and dimension 'dim'.
+        The variable measurement represent a random measurement with 'out' outcomes and dimension
+        'dim'.
     """
     # Bound for the checkings.
     BOUND = 1e-7
@@ -106,59 +110,73 @@ def generate_random_measurements(dim, out):
     raise RuntimeError("A random measurement cannot be generated.")
 
 
-def find_opt_prep(M, dim, n, out):
+def find_opt_prep(M, dim, n, out, bias):
 
     """
-    This function acts jointly with 'opt_state' function. The objective is to generate the set of opti-
-    mal states for a set of measurements M. It produces a dictionary 'opt_preps' that contains the opti-
-    mal preparations for a given combination of measurement operators.
+    Find optimal preparations
+    -------------------------
+
+    This function acts jointly with 'opt_state' function. The objective is to generate the set of
+    optimal states for a set of measurements M. It produces a dictionary 'opt_preps' that contains
+    the optimal preparations for a given combination of measurement operators.
 
     Inputs
     ------
     M: a list of lists whose elements are matrices of size dim x dim.
-        M is a list containing n lists. Each list inside M corresponds to a different measurement in the
-        QRAC task. For each measurement there are 'out' measurement operators.
+        M is a list containing n lists. Each list inside M corresponds to a different measurement in
+        the QRAC task. For each measurement there are 'out' measurement operators.
     dim: an integer.
         dim represents the dimension of the measurement operators.
     n: an integer.
         n represents the number of distinct measurements.
     out: an integer.
         out represents the number of outcomes of each measurement.
-
+    bias: a dictionary of size n * out ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
+    s() are floats.
+        The dictionary 'bias' represents a order-(n+2) tensor enconding the bias in some given QRAC.
     Output
     ------
-    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry is
-    a matrix of size dim x dim.
-        Every element of this dictionary corresponds to a rank-one density matrix for a given preparati-
-        on of Alice. In a n-dits QRAC, in which the dits are labelled as x_1, x_2, ..., x_n, for every
-        combination of dits, a state is prepared by Alice and sent to Bob. The dictionary 'opt_preps'
-        contains the optimal preparations related to each combination of dits. It is optimal in the sen-
-        se that it maximizes the figure-of-merit 'average success probability' for a given set of measu-
-        rements.
+    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry
+    is a matrix of size dim x dim.
+        Every element of this dictionary corresponds to a rank-one density matrix for a given prepa-
+        ration of Alice. In a n-dits QRAC, in which the dits are labelled as x_1, x_2, ..., x_n, for
+        every combination of dits, a state is prepared by Alice and sent to Bob. The dictionary 'opt
+        _preps' contains the optimal preparations related to each combination of dits. It is optimal
+        in the sense that it maximizes the figure-of-merit 'success probability' for a given set of
+        measurements.
 
     Example
     -------
-    Let us say that a QRAC with 3 dits is set. Then, we indicate a combination of measurement operators
-    by a tuple of size 3. The tuple (3, 4, 5) indicates the third outcome for the first measurement, the
-    fourth outcome for the second measurement and the fifth for the third measurement. The optimal pre-
-    paration for the combination of measurement operators (3, 4, 5) is saved in the dictionary
-    'opt_preps' whose key corresponds to the tuple '(3, 4, 5)'.
+    Let us say that a QRAC with 3 dits is set. Then, we indicate a combination of measurement opera-
+    tors by a tuple of size 3. The tuple (3, 4, 5) indicates the third outcome for the first measu-
+    rement, the fourth outcome for the second measurement and the fifth for the third measurement.
+    The optimal preparation for the combination of measurement operators (3, 4, 5) is saved in the
+    dictionary 'opt_preps' whose key corresponds to the tuple '(3, 4, 5)'.
     """
 
     # Creating an empty dictionary.
     opt_preps = {}
 
-    # The variable 'indexes' list all the possible tuples of size n with elements ranging from 0 to
-    # 'out' - 1.
-    indexes = product(range(0, out), repeat = n)
+    # The variable 'indexes_of_x' list all the possible tuples of size n with elements ranging from
+    # 0 to 'out' - 1.
+    indexes_of_x = product(range(0, out), repeat = n)
 
-    # This for runs over all n-tuples of 'indexes'. In practice, it is a for nested n times.
-    for i in indexes:
+    # This for runs over all n-tuples of 'indexes_of_x'. In practice, it is a for nested n times.
+    for i in indexes_of_x:
 
-        # I am just retrieving the indexes from the 'i'-th tuple and saving the corresponding mea-
-        # surement operators in this list 'operators_list'. Then, I compute the optimal preparation
-        # for these measurement operators.
-        operators_list = [M[j][i[j]] for j in range(0, n)]
+        # Initializing an empty list.
+        operators_list = []
+
+        for j in range(0, n):
+            for k in range(0, out):
+
+                # Here, I am running over all tuples 'i', and indexes 'j' and 'k'. The tuple (i, j,
+                # k) corresponds exactly to the keys of the dicitonary 'bias'. Then, for each ele-
+                # ment bias[(i, j, k)] I multiply the correct measurement operator and append to
+                # operators_list. Finally, I compute the optimal preparation for these measurement
+                # operators.
+                operators_list.append(bias[(i, j, k)] * M[j][k])
+
         opt_preps[i] = opt_state(operators_list, dim)
 
     return opt_preps
@@ -167,13 +185,16 @@ def find_opt_prep(M, dim, n, out):
 def opt_state(operators_list, dim):
 
     """
-    Complementary function for 'find_opt_prep' function. In this function, 'operators_list' represents
-    an ordered list of measurement operators of different measurements. The first element corresponds to
-    a certain measurement operator of the first measurement and so on.
+    Optimal state
+    -------------
 
-    For obtaining the optimal preparation for a certain combination of measurement operators, I am com-
-    puting the eigenvector related to the largest eigenvalue of "average success probability". From this
-    eigenvector, I generate the optimal state.
+    Complementary function for 'find_opt_prep' function. In this function, 'operators_list' repre-
+    sents an ordered list of measurement operators of different measurements. The first element cor-
+    responds to a certain measurement operator of the first measurement and so on.
+
+    For obtaining the optimal preparation for a certain combination of measurement operators, I am
+    computing the eigenvector related to the largest eigenvalue of "average success probability".
+    From this eigenvector, I generate the optimal state.
 
     Inputs
     ------
@@ -184,7 +205,8 @@ def opt_state(operators_list, dim):
     Output
     ------
     rho: an array of size dim x dim.
-        The optimal state preparation for the combination of measurement operators in 'operators_list'.
+        The optimal state preparation for the combination of measurement operators in 'operators_lis
+        t'.
     """
 
     # The 'average success probability' is defined as simply the sum of the elements in 'operators_
@@ -200,22 +222,26 @@ def opt_state(operators_list, dim):
     return rho
 
 
-def find_opt_meas(opt_preps, dim, n, out):
+def find_opt_meas(opt_preps, dim, n, out, bias):
 
     """
-    This function acts jointly with 'opt_meas' function. It solves a single step of the see-saw algori-
-    thm by optimizing all of the measurements of Bob independently. It receives as input a dictionary
-    containing the optimal preparations for all combinations of measurement operator of distinct measu-
-    rements of Bob.
+    Find optimal measurements
+    -------------------------
 
-    The optimizations of all measurements can be made independently. To optimize over the i-th measure-
-    ment we sum over all indexes of the dictionary 'opt_preps' but the i-th. Remember that the keys of
-    'opt_preps' are n-tuples. Then, a list 'opt_preps_sum' of sums is provided to 'opt_meas' function.
+    This function acts jointly with 'opt_meas' function. It solves a single step of the see-saw al-
+    gorithm by optimizing all of the measurements of Bob independently. It receives as input a dic-
+    tionary containing the optimal preparations for all combinations of measurement operators of
+    distinct measurements of Bob.
+
+    The optimizations of all measurements can be made independently. To optimize over the i-th mea-
+    surement we sum over all indexes of the dictionary 'opt_preps' but the i-th. Remember that the
+    keys of 'opt_preps' are n-tuples. Then, a list 'opt_preps_sum' of sums is provided to 'opt_meas'
+    function.
 
     Inputs
     ------
-    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry is
-    a matrix of size dim x dim.
+    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry
+    is a matrix of size dim x dim.
     dim: an integer.
         d represents the dimension of the measurement operators.
     n: an integer.
@@ -226,11 +252,11 @@ def find_opt_meas(opt_preps, dim, n, out):
     Output
     ------
     prob sum: a float
-        It contains the value of the optimization of the "average success probability" after a single
-        step of the see-saw algorithm.
+        It contains the value of the optimization of the "average success probability" after a sin-
+        gle step of the see-saw algorithm.
     M: a list of lists whose elements are matrices of size dim x dim.
-        M is the same list as in the function 'find_opt_prep' after a single step of the see-saw algori-
-        thm.
+        M is the same list as in the function 'find_opt_prep' after a single step of the see-saw al-
+        gorithm.
     """
 
     # Defining empty variables. I am reusing M to replace the new measurements after optimization.
@@ -238,17 +264,17 @@ def find_opt_meas(opt_preps, dim, n, out):
     prob_sum = 0
 
     # Each step of this loop stands for a different measurement.
-    for i in range(0, n):
+    for j in range(0, n):
 
         # Initializing an empty list.
         opt_preps_sum = []
-        for j in range(0, out):
 
-            indexes = product(range(0, out), repeat = n)
+        for k in range(0, out):
+
+            indexes_of_x = product(range(0, out), repeat = n)
 
             # Summing through all indexes of 'indexes' but the i-th.
-            indexes_subset = [k for k in indexes if k[i] == j]
-            sum = np.sum([opt_preps[k] for k in indexes_subset], axis=0)
+            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes_of_x], axis=0)
 
             # Appending d sums to 'opt_preps_sum'
             opt_preps_sum.append(sum)
@@ -264,10 +290,14 @@ def find_opt_meas(opt_preps, dim, n, out):
 def opt_meas(opt_preps_sum, dim, n, out):
 
     """
-    Complementary function for 'find_opt_meas' function. This function takes as input one of Bob's mea-
-    surements M[i] and a collection of optimal preparations 'opt_preps' with respect to M.
+    Optimal measurement
+    -------------------
 
-    The structure of this function is a simple SDP optimization for the objective function 'prob_guess'.
+    Complementary function for 'find_opt_meas' function. This function takes as input one of Bob's
+    measurements M[i] and a collection of optimal preparations 'opt_preps' with respect to M.
+
+    The structure of this function is a simple SDP optimization for the objective function 'prob_gue
+    ss'.
 
     Inputs
     ------
@@ -299,7 +329,7 @@ def opt_meas(opt_preps_sum, dim, n, out):
     # Defining objective function:
     prob_guess = 0
     for i in range(0, out):
-        prob_guess += (1 / (n * out ** n)) * cp.trace(M_vars[i] @ opt_preps_sum[i])
+        prob_guess += cp.trace(M_vars[i] @ opt_preps_sum[i])
 
     # Defining constraints:
     constr = []
@@ -326,24 +356,36 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
 ############################################### MAIN ###############################################
 
-def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_status: [bool] =
-                    True, PROB_BOUND: [float] = 1e-9, MEAS_BOUND: [float] = 5e-7, bias = 'RAC'):
+def find_QRAC_value(
+    n: [int],
+    dim: [int],
+    seeds: [int],
+    out: [int] = None,
+    meas_status: [bool] = True,
+    PROB_BOUND: [float] = 1e-9,
+    MEAS_BOUND: [float] = 5e-7,
+    bias: [str] = None,
+    weight = None
+):
     """
-    Main function. Here I perform a see-saw optimization for the nˆ(dim) --> 1 QRAC. This function can
-    be described in a few elementary steps, as follows:
+    Find the Quantum Random Acces Code quantum value
+    ------------------------------------------------
 
-        1. Create a set of n random measurements with 'out' outcomes acting dimension 'dim' with 'genera
-        te_random_measurements'.
+    Main function. Here I perform a see-saw optimization for the nˆ(dim) --> 1 QRAC. This function
+    can be described in a few elementary steps, as follows:
+
+        1. Create a set of n random measurements with 'out' outcomes acting dimension 'dim' with 'ge
+        nerate_random_measurements'.
         2. For this set of measurements, find the set optimal preparations using 'find_opt_prep'.
-        3. Optimize the measurements for the set of optimal preparations found in step 2 using 'find_opt
-        _meas'.
-        4. Check if the variables 'prob_value' and 'M' are converging. If not, return to step 2 until
-        the difference between 'previous_prob_value' and 'prob_value' is smaller than PROB_BOUND. Also,
-        the loop should terminate either when 'max_norm_difference' is smaller than MEAS_BOUND or when
-        the number of iterations is bigger than 'iterations.
+        3. Optimize the measurements for the set of optimal preparations found in step 2 using 'find
+        _opt_meas'.
+        4. Check if the variables 'prob_value' and 'M' are converging. If not, return to step 2 till
+        the difference between 'previous_prob_value' and 'prob_value' is smaller than PROB_BOUND.
+        Also, the loop should terminate either when 'max_norm_difference' is smaller than MEAS_BOUND
+        or when the number of iterations is bigger than 'iterations.
 
-    This function also checks if the obtained optimal measurements are MUBs by activating 'determine_mea
-    s_status function.
+    This function also checks if the obtained optimal measurements are MUBs by activating 'determine
+    _meas_status' function.
 
     Inputs
     ------
@@ -354,17 +396,18 @@ def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_
     seeds: an integer.
         Represents the number of random seeds as the starting point of the see-saw algorithm.
     out: an integer. [optional]
-        The number of outcomes for the measurements. If no value is attributed to 'out', then out = dim.
+        The number of outcomes for the measurements. If no value is attributed to 'out', then out =
+        dim.
     meas_status: True or False. True by default. [optional]
-        If true, it activates the function determine_meas_status for details about the optimized measu-
-        rements.
+        If true, it activates the function determine_meas_status for details about the optimized
+        measurements.
     PROB_BOUND: a float. [optional]
-        Convergence criterion for the variable 'prob_value'. When the difference between 'prob_value'
-        and 'previous_prob_value' is less than PROB_BOUND, the algorithm interprets prob_value = previ-
-        ous_prob_value.
+        Convergence criterion for the variable 'prob_value'. When the difference between 'prob_va-
+        lue' and 'previous_prob_value' is less than PROB_BOUND, the algorithm interprets prob_value
+        = previous_prob_value.
     MEAS_BOUND: a float. [optional]
-        The same criterion as in PROB_BOUND but for the norms of the measurement operators in the varia-
-        ble M.
+        The same criterion as in PROB_BOUND but for the norms of the measurement operators in the
+        variable M.
 
     Output
     ------
@@ -382,6 +425,10 @@ def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_
         out = dim
 
     print("")
+
+    # Here I am generating the bias and saving it in the tensor 'bias_tensor'. By default, the QRAC
+    # is unbiased, so the 'bias = None'.
+    bias_tensor = generate_bias(n, out, bias, weight)
 
     for i in range(0, seeds):
 
@@ -420,8 +467,8 @@ def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_
             previous_prob_value = prob_value
 
             # The two lines below correspond to two a single round of see-saw.
-            opt_preps = find_opt_prep(M, dim, n, out)
-            prob_value, M = find_opt_meas(opt_preps, dim, n, out)
+            opt_preps = find_opt_prep(M, dim, n, out, bias_tensor)
+            prob_value, M = find_opt_meas(opt_preps, dim, n, out, bias_tensor)
 
             norm_difference = []
             for a in range(0, n):
@@ -467,16 +514,19 @@ def find_QRAC_value(n: [int], dim: [int], seeds: [int], out: [int] = None, meas_
 def determine_meas_status(M, dim, n, out):
 
     """
-    This function simply checks the status of the optimized measurements. It checks whether the measure-
-    ment operators are Hermitian, positive semi-definite, rank-one, projective and if they sum to iden-
-    tity, not necessarily in this order. To finish it checks if all of the pairs of measurements are
-    constructed out of mutually unbiased bases using the function 'check_if_MUBs'.
+    Determine measurement status
+    ----------------------------
+
+    This function simply checks the status of the optimized measurements. It checks whether the mea-
+    surement operators are Hermitian, positive semi-definite, rank-one, projective and if they sum
+    to identity, not necessarily in this order. To finish it checks if all of the pairs of measure-
+    ments are constructed out of mutually unbiased bases using the function 'check_if_MUBs'.
 
     Inputs
     ------
     M: a list of lists whose elements are matrices of size dim x dim.
-        M is a list containing n lists. Each list inside M corresponds to a different measurement in the
-        QRAC task. For each measurement there are 'out' measurement operators.
+        M is a list containing n lists. Each list inside M corresponds to a different measurement in
+        the QRAC task. For each measurement there are 'out' measurement operators.
     dim: an integer.
         dim represents the dimension of the measurement operators.
     n: an integer.
@@ -579,12 +629,15 @@ def determine_meas_status(M, dim, n, out):
                     )
 
 
-def check_if_MUBs(P, Q, out, MUB_BOUND=1e-5):
+def check_if_MUBs(P, Q, out, MUB_BOUND = 1e-5):
 
     """
-    This function works jointly with 'determine_meas_status' function. It simply gets two 'dim'-dimen-
-    sional measurements P and Q, and checks if they are constructed out of Mutually Unbiased Bases. Che-
-    ck appendix II of the supplementary material of the reference for details.
+    Check if two measurements are mutually unbiased
+    -----------------------------------------------
+
+    This function works jointly with 'determine_meas_status' function. It simply gets two 'dim'-di-
+    mensional measurements P and Q, and checks if they are constructed out of Mutually Unbiased Ba-
+    ses. Check appendix II of the supplementary material of the reference for details.
 
     Inputs
     ------
@@ -595,22 +648,22 @@ def check_if_MUBs(P, Q, out, MUB_BOUND=1e-5):
     out: an integer.
         out represents the number of outcomes of the measurements.
     MUB_BOUND: a float.
-        If PQP-P < MUB_BOUND, then the equation PQP = P is considered satisfied and the measurements P
-        and Q are considered mutually unbiased.
+        If PQP-P < MUB_BOUND, then the equation PQP = P is considered satisfied and the measurements
+        P and Q are considered mutually unbiased.
 
     Output
     ------
     status: a dictionary with two entries. A boolean variable and a float.
-        The first key of this dictionary is named 'boolean'. If 'True', P and Q are considered mutually
-        unbiased up to the numerical precision of MUB_BOUND. The second key is named 'max_error' and
-        contains the maximum norm difference by which the measurement operators of P and Q do not satis-
-        fy the equations PQP = P and QPQ = Q.
+        The first key of this dictionary is named 'boolean'. If 'True', P and Q are considered mutu-
+        ally unbiased up to the numerical precision of MUB_BOUND. The second key is named 'max_er-
+        ror' and contains the maximum norm difference by which the measurement operators of P and Q
+        do not satisfy the equations PQP = P and QPQ = Q.
 
     Reference
     ---------
-    1. A. Tavakoli, M. Farkas, D. Rosset, J.-D. Bancal, J. Kaniewski, Mutually unbiased bases and sym-
-    metric informationally complete measurements in Bell experiments, Sci. Adv., vol. 7, issue 7. DOI:
-    10.1126/sciadv.abc3847.
+    1. A. Tavakoli, M. Farkas, D. Rosset, J.-D. Bancal, J. Kaniewski, Mutually unbiased bases and
+    symmetric informationally complete measurements in Bell experiments, Sci. Adv., vol. 7, issue 7.
+    DOI: 10.1126/sciadv.abc3847.
     """
     status = {"boolean": True}
 
@@ -631,20 +684,180 @@ def check_if_MUBs(P, Q, out, MUB_BOUND=1e-5):
 
     return status
 
-def generate_bias(n, out, bias = 'RAC'):
 
-    alpha = {}
+def generate_bias(n, out, bias, weight):
 
-    if bias == 'RAC':
+    """
+    Generate bias
+    -------------
 
-        indexes = product(product(range(0, out), repeat = n + 1), range(n))
+    This function generates a dictionary in which the keys are tuples of the form
 
-        for i in indexes:
+    i = ((x_1, x_2, x_3, ... , x_n), y, b)
 
-            if i[0][n] == i[0][i[1]]:
-                alpha[i] = 1 / (n * out**n)
+    where x_1, x_2, x_3, ... , x_n and b range from 0 to out - 1 and y ranges from 0 to n - 1. The
+    object bias tensor[i] represents a order-(n+2) tensor enconding the bias in some given QRAC.
 
-            else:
-                alpha[i] = 0
+    If bias = None, the QRAC is unbiased and all of the n * out ** n elements in bias_tensor are
+    uniform. The elements of bias_tensor are strictly bigger than zero whenever i[2] == i[0][i[1]].
 
-    return alpha
+    There are seven possible kinds of bias, as follows.
+    1. "XDIAG". Bias in the input string x. The elements of the main diagonal of the order-n tensor
+    i[0] are prefered with probability 'weight'. For the n = 2 QRAC, it translates as
+
+    x_1/x_2 | 0  1  2 ... out-1
+    0       | *  .  .       .
+    1       | .  *  .       .
+    2       | .  .  *       .
+    :       |
+    out-1   | .  .  .       *
+
+    2. "XCHESS". Bias in the input string x. The elements of the order-n tensor i[0] are prefered
+    with probability 'weight', in an array that resembles a chess table. If n = 2,
+
+    x_1/x_2 | 0  1  2 ... out-1
+    0       | .  *  .       *
+    1       | *  .  *       .
+    2       | .  *  .       *
+    :       |
+    out-1   | *  .  *       .
+
+    3. "XPARAM". Bias in the input string x. The element (0, 0, ..., 0) of the order-n tensor i[0]
+    is prefered probability 'weight'
+
+    4. "YPARAM". Bias in the requested digit y. The element 0 of i[1] is prefered with probability
+    'weight'.
+
+    5. "YVEC". Bias in the requested digit y. The y-th element of i[1] is prefered with probability
+    'weight[y]'.
+
+    6. "BPARAM". Bias in the retrived output b. The element 0 of i[2] is prefered with probability
+    'weight'.
+
+    7. "BVEC". Bias in the retrived output b. The b-th element of i[2] is prefered with probability
+    'weight[b]'.
+
+    Inputs
+    ------
+    n: an integer.
+        n represents the number of distinct measurements.
+    out: an integer.
+        out represents the number of outcomes of the measurements.
+    bias: a string or an empty variable ('None').
+        It encodes the type of bias desired for the computation. There are seven possibilities: "XDI
+        AG", "XCHESS", "XPARAM", "YPARAM", "YVEC", "BPARAM" and "BVEC".
+    weight: a float or a list of floats of size 'out'.
+        The varible 'weight' carries the weight (or weights) with which the QRAC is biased. If it is
+        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
+        must sum to 1.
+        Note that, for the case in which 'weight' is a single float, this variable is symmetrical.
+        That is, setting weight = 0.5 has the same effect as making bias = None.
+
+    Output
+    ------
+    bias_tensor: a dictionary of size n * out ** n. bias_tensor.keys() are tuples of n + 2 coordina-
+    tes. bias_tensor.values() are floats.
+        bias_tensor represents a order-(n+2) tensor enconding the bias in some given QRAC.
+    """
+
+    # Initializing an empty dicitonary.
+    bias_tensor = {}
+
+    # Creating an iterable for feeding bias_tensor. The keys of bias_tensor will be the tuples defi-
+    # ned by the iterable 'indexes'.
+    indexes = product(product(range(0, out), repeat = n), range(0, n), range(0, out))
+
+    for i in indexes:
+
+        # Enforcing the QRAC condition.
+        if i[2] == i[0][i[1]]:
+
+            # The elements must be uniform. There n * out**n elements in bias_tensor in total.
+            bias_tensor[i] = 1 / (n * out**n)
+
+            # Separating in cases. If bias = None, none of the below cases will match, and the re-
+            # sulting bias_tensor will be unbiased.
+            if bias == "XDIAG":
+
+                assert 0 <= weight <= 1, "For the XDIAG bias, 'weight' must range between 0 and 1."
+
+                # This is a normalization constant for the XDIAG case. It ensures that sum(bias_tens
+                # or.values()) == 1.
+                norm = (2 * weight - 1) / (out ** (n - 1)) - weight + 1
+
+                # If i[0] is a diagonal element, then it is prefered with 'weight'. If not, it is
+                # prefered with 1 - weight. The other cases follow similarly.
+                if len(set(i[0])) == 1:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+            elif bias == "XCHESS":
+
+                assert 0 <= weight <= 1, "For the XCHESS bias, 'weight' must range between 0 and 1."
+
+                # Here the normalization depends on the parity of out ** n. Recall that parity(out)
+                # == parity(out ** n), for positive n and out.
+                if out % 2 == 0:
+                    norm = 0.5
+                else:
+                    norm = (1 + (n - 2 * n * weight) / (n * out ** n)) / 2
+
+                if sum(i[0]) % 2 == 1:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+            elif bias == "XPARAM":
+
+                assert 0 <= weight <= 1, "For the XPARAM bias, 'weight' must range between 0 and 1."
+
+                norm = 1 - weight - (n - 2 * n * weight) / (n * out ** n)
+
+                if i[0] == (0,) * n:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+            elif bias == "YPARAM":
+
+                assert 0 <= weight <= 1, "For the YPARAM bias, 'weight' must range between 0 and 1."
+
+                norm = 1 - weight - 1 / n + (2 * weight) / n
+
+                if i[1] == 0:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+            elif bias == "YVEC":
+
+                assert len(weight) == n, "For the YVEC bias, the expected size of 'weight' is n."
+
+                assert round(sum(weight), 7) == 1, "For the YVEC bias, the weights must sum to one."
+
+                bias_tensor[i] = n * weight[i[1]] * bias_tensor[i] / sum(weight)
+
+            elif bias == "BPARAM":
+
+                assert 0 <= weight <= 1, "For the BPARAM bias, 'weight' must range between 0 and 1."
+
+                norm = 1 - weight - 1 / out + (2 * weight) / out
+
+                if i[2] == 0:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+            elif bias == "BVEC":
+
+                assert len(weight) == out, "For the BVEC bias, the expected size of 'weight' is d."
+
+                assert round(sum(weight), 7) == 1, "For the BVEC bias, the weights must sum to one."
+
+                bias_tensor[i] = out * weight[i[2]] * bias_tensor[i] / sum(weight)
+
+        else:
+            bias_tensor[i] = 0
+
+    return bias_tensor
