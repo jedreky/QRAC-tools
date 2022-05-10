@@ -134,6 +134,7 @@ def find_opt_prep(M, dim, n, out, bias):
     bias: a dictionary of size n * out ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
         The dictionary 'bias' represents a order-(n+2) tensor enconding the bias in some given QRAC.
+
     Output
     ------
     opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry
@@ -234,9 +235,8 @@ def find_opt_meas(opt_preps, dim, n, out, bias):
     distinct measurements of Bob.
 
     The optimizations of all measurements can be made independently. To optimize over the i-th mea-
-    surement we sum over all indexes of the dictionary 'opt_preps' but the i-th. Remember that the
-    keys of 'opt_preps' are n-tuples. Then, a list 'opt_preps_sum' of sums is provided to 'opt_meas'
-    function.
+    surement we sum over all indexes of the dictionary 'opt_preps'. Remember that the keys of 'opt_p
+    reps' are n-tuples. Then, a list 'opt_preps_sum' of sums is provided to 'opt_meas' function.
 
     Inputs
     ------
@@ -248,6 +248,9 @@ def find_opt_meas(opt_preps, dim, n, out, bias):
         n represents the number of distinct measurements.
     out: an integer.
         out represents the number of outcomes of each measurement.
+    bias: a dictionary of size n * out ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
+    s() are floats.
+        The dictionary 'bias' represents a order-(n+2) tensor enconding the bias in some given QRAC.
 
     Output
     ------
@@ -259,7 +262,7 @@ def find_opt_meas(opt_preps, dim, n, out, bias):
         gorithm.
     """
 
-    # Defining empty variables. I am reusing M to replace the new measurements after optimization.
+    # Defining empty variables.
     M = []
     prob_sum = 0
 
@@ -271,15 +274,16 @@ def find_opt_meas(opt_preps, dim, n, out, bias):
 
         for k in range(0, out):
 
-            indexes_of_x = product(range(0, out), repeat = n)
+            indexes = product(range(0, out), repeat = n)
 
-            # Summing through all indexes of 'indexes' but the i-th.
-            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes_of_x], axis=0)
+            # Summing through all indexes of 'indexes'. This sum is weighted by the correct bias
+            # element, bias[(i, j, k)].
+            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes], axis = 0)
 
-            # Appending d sums to 'opt_preps_sum'
+            # Appending 'out' sums to 'opt_preps_sum'
             opt_preps_sum.append(sum)
 
-        # Solving the problem for the i-th measurement
+        # Solving the problem for the j-th measurement
         prob_value, meas_value = opt_meas(opt_preps_sum, dim, n, out)
         prob_sum += prob_value
         M.append(meas_value)
@@ -408,6 +412,15 @@ def find_QRAC_value(
     MEAS_BOUND: a float. [optional]
         The same criterion as in PROB_BOUND but for the norms of the measurement operators in the
         variable M.
+    bias: a dictionary of size n * out ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
+    s() are floats.
+        The dictionary 'bias' represents a order-(n+2) tensor enconding the bias in some given QRAC.
+    weight: a float or a list of floats of size 'out'.
+        The varible 'weight' carries the weight (or weights) with which the QRAC is biased. If it is
+        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
+        must sum to 1.
+        Note that, for the case in which 'weight' is a single float, this variable is symmetrical.
+        That is, setting weight = 0.5 has the same effect as making bias = None.
 
     Output
     ------
