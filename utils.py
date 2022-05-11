@@ -1,11 +1,23 @@
-"""
-This file contains the main functions for optimizing an nˆ(dim) --> 1 QRAC. The main function can be
-accessed by the command 'find_QRAC_value'.
-"""
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+# ==================================================================================================
+# Created by  : Gabriel Pereira Alves, Jedrzej Kaniewski and Nicolas Gigena
+# Created Date: March 16, 2022
+# e-mail: gpereira@fuw.edu.pl
+# version = '1.0'
+# ==================================================================================================
+"""This file contains the main functions for optimizing an nˆ(dim) --> 1 QRAC. The main function can
+be accessed by the command 'find_QRAC_value'."""
+# ==================================================================================================
+# Imports: cvxpy, numpy, scipy and itertools
+# ==================================================================================================
+
 
 import cvxpy as cp
 import numpy as np
+
 import numpy.linalg as nalg
+
 from numpy.random import rand
 from scipy.linalg import sqrtm
 from itertools import product
@@ -107,7 +119,7 @@ def generate_random_measurements(dim, out):
 
         return measurement
 
-    raise RuntimeError("A random measurement cannot be generated.")
+    raise RuntimeError("a random measurement cannot be generated")
 
 
 def find_opt_prep(M, dim, n, out, bias):
@@ -357,18 +369,18 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
     return prob.value, M_vars
 
-
-############################################### MAIN ###############################################
-
+# ==================================================================================================
+# ---------------------------------------------- MAIN ----------------------------------------------
+# ==================================================================================================
 def find_QRAC_value(
-    n: [int],
-    dim: [int],
-    seeds: [int],
-    out: [int] = None,
-    meas_status: [bool] = True,
-    PROB_BOUND: [float] = 1e-9,
-    MEAS_BOUND: [float] = 5e-7,
-    bias: [str] = None,
+    n: int,
+    dim: int,
+    seeds: int,
+    out: int = None,
+    meas_status: bool = True,
+    PROB_BOUND: float = 1e-9,
+    MEAS_BOUND: float = 5e-7,
+    bias: str = None,
     weight = None
 ):
     """
@@ -564,7 +576,7 @@ def determine_meas_status(M, dim, n, out):
     for i in range(0, n):
         for j in range(0, out):
             if nalg.norm(M[i][j] - M[i][j].conj().T) > BOUND:
-                raise RuntimeError("Measurement operators are not Hermitian.")
+                raise RuntimeError("measurement operators are not Hermitian")
 
     # Checking if the measurement operators are positive semi-definite.
     for i in range(0, n):
@@ -572,14 +584,14 @@ def determine_meas_status(M, dim, n, out):
             eigval, eigvet = nalg.eigh(M[i][j])
             if eigval[0] < -BOUND:
                 raise RuntimeError(
-                    "Measurement operators are not positive semi-definite."
+                    "measurement operators are not positive semi-definite"
                 )
 
     # Checking if the measurement operators sum to identity.
     for i in range(0, n):
         sum = np.sum(M[i], axis=0)
         if nalg.norm(sum - np.eye(dim)) > BOUND:
-            raise RuntimeError("Measurement operators does not sum to identity.")
+            raise RuntimeError("measurement operators does not sum to identity")
 
     # This will return me an array with the ranks of all measurement operators.
     rank = nalg.matrix_rank(M, tol=BOUND, hermitian=True)
@@ -790,85 +802,99 @@ def generate_bias(n, out, bias, weight):
 
             # Separating in cases. If bias = None, none of the below cases will match, and the re-
             # sulting bias_tensor will be unbiased.
-            if bias == "XDIAG":
+            if bias == None:
+                continue
 
-                assert 0 <= weight <= 1, "For the XDIAG bias, 'weight' must range between 0 and 1."
+            elif not isinstance(bias, str):
+                raise TypeError("string argument expected for 'bias', got "
+                + str(type(bias).__name__))
 
-                # This is a normalization constant for the XDIAG case. It ensures that sum(bias_tens
-                # or.values()) == 1.
-                norm = (2 * weight - 1) / (out ** (n - 1)) - weight + 1
+            elif weight == None:
+                raise AssertionError("a value for 'weight' must be provided")
 
-                # If i[0] is a diagonal element, then it is prefered with 'weight'. If not, it is
-                # prefered with 1 - weight. The other cases follow similarly.
-                if len(set(i[0])) == 1:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+            elif (
+            bias == "XDIAG" or
+            bias == "XCHESS" or
+            bias == "XPARAM" or
+            bias == "YPARAM" or
+            bias == "BPARAM"
+            ):
 
-            elif bias == "XCHESS":
+                assert 0 <= weight <= 1, "'weight' must range between 0 and 1."
 
-                assert 0 <= weight <= 1, "For the XCHESS bias, 'weight' must range between 0 and 1."
+                if bias == "XDIAG":
 
-                # Here the normalization depends on the parity of out ** n. Recall that parity(out)
-                # == parity(out ** n), for positive n and out.
-                if out % 2 == 0:
-                    norm = 0.5
-                else:
-                    norm = (1 + (n - 2 * n * weight) / (n * out ** n)) / 2
+                    # This is a normalization constant for the XDIAG case. It ensures that sum(bias_
+                    # tensor.values()) == 1.
+                    norm = (2 * weight - 1) / (out ** (n - 1)) - weight + 1
 
-                if sum(i[0]) % 2 == 1:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    # If i[0] is a diagonal element, then it is prefered with 'weight'. If not, it
+                    # is prefered with 1 - weight. The other cases follow similarly.
+                    if len(set(i[0])) == 1:
+                        bias_tensor[i] = weight * bias_tensor[i] / norm
+                    else:
+                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-            elif bias == "XPARAM":
+                elif bias == "XCHESS":
 
-                assert 0 <= weight <= 1, "For the XPARAM bias, 'weight' must range between 0 and 1."
+                    # Here the normalization depends on the parity of out ** n. Recall that parity(o
+                    # ut) == parity(out ** n), for positive n and out.
+                    if out % 2 == 0:
+                        norm = 0.5
+                    else:
+                        norm = (1 + (n - 2 * n * weight) / (n * out ** n)) / 2
 
-                norm = 1 - weight - (n - 2 * n * weight) / (n * out ** n)
+                    if sum(i[0]) % 2 == 1:
+                        bias_tensor[i] = weight * bias_tensor[i] / norm
+                    else:
+                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                if i[0] == (0,) * n:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                elif bias == "XPARAM":
 
-            elif bias == "YPARAM":
+                    norm = 1 - weight - (n - 2 * n * weight) / (n * out ** n)
 
-                assert 0 <= weight <= 1, "For the YPARAM bias, 'weight' must range between 0 and 1."
+                    if i[0] == (0,) * n:
+                        bias_tensor[i] = weight * bias_tensor[i] / norm
+                    else:
+                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                norm = 1 - weight - 1 / n + (2 * weight) / n
+                elif bias == "YPARAM":
 
-                if i[1] == 0:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    norm = 1 - weight - 1 / n + (2 * weight) / n
+
+                    if i[1] == 0:
+                        bias_tensor[i] = weight * bias_tensor[i] / norm
+                    else:
+                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+
+                elif bias == "BPARAM":
+
+                    norm = 1 - weight - 1 / out + (2 * weight) / out
+
+                    if i[2] == 0:
+                        bias_tensor[i] = weight * bias_tensor[i] / norm
+                    else:
+                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
             elif bias == "YVEC":
 
-                assert len(weight) == n, "For the YVEC bias, the expected size of 'weight' is n."
+                assert len(weight) == n, "the expected size of 'weight' is n"
+                assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
-                assert round(sum(weight), 7) == 1, "For the YVEC bias, the weights must sum to one."
-
-                bias_tensor[i] = n * weight[i[1]] * bias_tensor[i] / sum(weight)
-
-            elif bias == "BPARAM":
-
-                assert 0 <= weight <= 1, "For the BPARAM bias, 'weight' must range between 0 and 1."
-
-                norm = 1 - weight - 1 / out + (2 * weight) / out
-
-                if i[2] == 0:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                bias_tensor[i] = n * weight[i[1]] * bias_tensor[i]
 
             elif bias == "BVEC":
 
-                assert len(weight) == out, "For the BVEC bias, the expected size of 'weight' is d."
+                assert len(weight) == out, "the expected size of 'weight' is d"
+                assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
-                assert round(sum(weight), 7) == 1, "For the BVEC bias, the weights must sum to one."
+                bias_tensor[i] = out * weight[i[2]] * bias_tensor[i]
 
-                bias_tensor[i] = out * weight[i[2]] * bias_tensor[i] / sum(weight)
+            else:
+                raise RuntimeError(
+                 "Available options for bias are: XDIAG, XCHESS,"
+                 " XPARAM, YPARAM, YVEC, BPARAM and BVEC."
+                 )
 
         else:
             bias_tensor[i] = 0
