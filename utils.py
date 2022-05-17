@@ -361,7 +361,7 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
     # Defining the SDP and solving. CVXPY cannot recognize the objective function is real.
     prob = cp.Problem(cp.Maximize(cp.real(prob_guess)), constr)
-    prob.solve(solver="MOSEK")
+    prob.solve(solver = "MOSEK")
 
     # Updating 'M_vars' by its optimal value.
     for i in range(0, out):
@@ -377,7 +377,7 @@ def find_QRAC_value(
     dim: int,
     seeds: int,
     out: int = None,
-    meas_status: bool = True,
+    verbose: bool = True,
     PROB_BOUND: float = 1e-9,
     MEAS_BOUND: float = 5e-7,
     bias: str = None,
@@ -414,7 +414,7 @@ def find_QRAC_value(
     out: an integer. [optional]
         The number of outcomes for the measurements. If no value is attributed to 'out', then out =
         dim.
-    meas_status: True or False. True by default. [optional]
+    verbose: True or False. True by default. [optional]
         If true, it activates the function determine_meas_status for details about the optimized
         measurements.
     PROB_BOUND: a float. [optional]
@@ -436,7 +436,10 @@ def find_QRAC_value(
 
     Output
     ------
-    The optimized value of the 'average success probability' for the nˆ(dim) --> 1 QRAC.
+    prob_value: a float.
+        Returned if verbose = False. The optimized value of the 'average success probability' for
+        the nˆ(dim) --> 1 QRAC. If verbose = True, the function returns a report containing details
+        of the computation.
     """
     # Starting variables max_prob_value and M_optimal.
     max_prob_value = 0
@@ -449,7 +452,16 @@ def find_QRAC_value(
     if out is None:
         out = dim
 
-    print("")
+    if verbose:
+        print(
+            "\n"
+            + "=" * 80
+             )
+        print(
+            " " * 32
+            + "QRAC-tools 1.0 v")
+        print("=" * 80
+            + "\n")
 
     # Here I am generating the bias and saving it in the tensor 'bias_tensor'. By default, the QRAC
     # is unbiased, so the 'bias = None'.
@@ -505,12 +517,13 @@ def find_QRAC_value(
             iter_count += 1
 
         # Print message that only 'prob_value' converged.
-        if iter_count >= iterations:
-            print(
-                "The measurements have not converged below the MEAS_BOUND for the seed #"
-                + str(i + 1)
-                + "."
-            )
+        if verbose:
+            if iter_count >= iterations:
+                print(
+                    "The measurements have not converged below the MEAS_BOUND for the seed #"
+                    + str(i + 1)
+                    + "."
+                    )
 
         # Selecting the largest problem value from all distinct random seeds.
         if prob_value > max_prob_value:
@@ -519,22 +532,30 @@ def find_QRAC_value(
             seed_number = i
 
     # Just printing the max_prob_value.
-    print(
-        "The optimized value for the "
-        + str(n)
-        + "ˆ"
-        + str(out)
-        + "-->1 QRAC is "
-        + str(prob_value.round(10))
-        + ", found by the seed #"
-        + str(seed_number + 1)
-        + "."
-    )
+    if verbose:
+        print(
+            "The optimized value for the "
+            + str(n)
+            + "ˆ"
+            + str(out)
+            + "-->1 QRAC is "
+            + str(prob_value.round(10))
+            + ", found by the seed #"
+            + str(seed_number + 1)
+            + "."
+            )
 
-    # meas_status is True by default.
-    if meas_status:
+    # verbose is True by default.
+    if verbose:
         determine_meas_status(M_optimal, dim, n, out)
-
+        print(
+            '\n'
+            + '-' * 30
+            + " End of computation "
+            + '-' * 30
+            )
+    else:
+        return prob_value
 
 def determine_meas_status(M, dim, n, out):
 
