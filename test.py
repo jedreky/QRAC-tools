@@ -19,10 +19,85 @@ from numpy.random import uniform
 
 
 class colors:
-    CYAN = '\033[96m'
-    BOLD = '\033[1m'
+    CYAN =  '\033[96m'
+    GREEN = '\033[92m'
+    RED =   '\033[91m'
+    BOLD =  '\033[1m'
     FAINT = '\033[2m'
-    END = '\033[0m'
+    END =   '\033[0m'
+
+
+def printings(value1, value2, n = None, d = None, weight = None):
+
+    """
+    Printings
+    ---------
+
+    A function to print the expected and computed values for 'find_QRAC_value'. If the difference
+    between these values is smaller than 'difference', then it is printed in green. If not, it is
+    printed in red.
+
+    Inputs
+    ------
+    value1: a float.
+        The expected value for the QRAC.
+    value2: a float.
+        The computed value for the QRAC.
+    n: an integer.
+        n represents the number of distinct measurements in the QRAC.
+    d: an integer.
+        d represents the number of outcomes for each measurement. In general, d is also taken as the
+        dimension of the measurement operators in the QRAC.
+    weight: a float.
+        'weight' represents the weight with which the QRAC is biased.
+    """
+
+    # Fixing the acceptable difference for expected and computed values to 1e-6.
+    difference = 1e-6
+
+    # If the QRAC is biased, so its is desirable to print the weight by which it is biased. So the
+    # printing must be different if no weight is attributed.
+    if weight == None:
+        print(
+            colors.CYAN
+            + "For the "
+            + str(n)
+            + "ˆ"
+            + str(d)
+            + "-->1 QRAC:"
+            + colors.END
+            +"\nLiterature value: "
+            + str("{:.7f}".format(value1))
+            + "   Computed value: "
+            + str("{:.7f}".format(value2))
+            + "   Difference: ",
+            colors.GREEN + colors.BOLD
+            + str(float('%.1g' % (value1 - value2)))
+            + colors.END
+            if abs(value1 - value2) < difference
+            else colors.RED + colors.BOLD
+            + str(float('%.1g' % (value1 - value2)))
+            + colors.END
+            )
+    else:
+        print(
+            colors.CYAN
+            +"For weight = "
+            + str("{:.3f}".format(weight))
+            + colors.END
+            +":\nExpected quantum value: "
+            + str("{:.6f}".format(value1))
+            + "   Computed value: "
+            + str("{:.6f}".format(value2))
+            + "   Difference: ",
+            colors.GREEN + colors.BOLD
+            + str(float('%.1g' % (value1 - value2)))
+            + colors.END
+            if abs(value1 - value2) < difference
+            else colors.RED + colors.BOLD
+            + str(float('%.1g' % (value1 - value2)))
+            + colors.END
+            )
 
 
 def test_qubit_qracs(seeds):
@@ -52,28 +127,25 @@ def test_qubit_qracs(seeds):
     Randomness, available in arXiv:0810.2937.
     """
 
-    # This is the theoretical quantum value provided by the literatute. I am filling the first en-
-    # tries with zero so that the index of the list 'literature_value' agrees with the indexes of
-    # the for below.
-    literature_value = [0, 0, (1 + 1 / np.sqrt(2)) / 2, 0.788675, 0.741481, 0.713578]
+    # This is the theoretical quantum value provided by the literatute. For n = 2 and n = 3, the
+    # quantum value is known exactly.
+    literature_value = {
+                        2: (1 + 1 / np.sqrt(2)) / 2,
+                        3: (1 + 1 / np.sqrt(3)) / 2,
+                        4:  0.741481,
+                        5:  0.713578,
+                        6:  0.694046,
+                        7:  0.678638,
+                        8:  0.666633,
+                        9:  0.656893,
+                        10: 0.648200,
+                        11: 0.641051,
+                        12: 0.634871
+                        }
 
     for j in range(2, 5):
-
         computed_value = ut.find_QRAC_value(j, 2, seeds, verbose = False)
-
-        print(
-            colors.CYAN
-            + "For the "
-            + str(j)
-            + "ˆ2-->1 QRAC:\n"
-            + colors.END
-            + "Literatute value: "
-            + str("{:.7f}".format(literature_value[j]))
-            + "   Computed value: "
-            + str("{:.7f}".format(computed_value))
-            + "   Difference: "
-            + str(float('%.1g' % (literature_value[j] - computed_value)))
-            )
+        printings(literature_value[j], computed_value, j, 2)
 
 
 def test_higher_dim_qracs(seeds):
@@ -103,25 +175,12 @@ def test_higher_dim_qracs(seeds):
     scenario. Phys. Rev. A, 99, 032316, 2019.
     """
 
-    literature_value = [0 if i == 0 else (1 + 1 / np.sqrt(i)) / 2 for i in range(0, 6)]
+    literature_value = {i: (1 + 1 / np.sqrt(i)) / 2 for i in range(3, 6)}
 
     for j in range(3, 6):
 
         computed_value = ut.find_QRAC_value(2, j, seeds, verbose = False)
-
-        print(
-            colors.CYAN
-            + "For the 2ˆ"
-            + str(j)
-            + "-->1 QRAC:"
-            + colors.END
-            +"\nLiteratute value: "
-            + str("{:.7f}".format(literature_value[j]))
-            + "   Computed value: "
-            + str("{:.7f}".format(computed_value))
-            + "   Difference: "
-            + str(float('%.1g' % (literature_value[j] - computed_value)))
-            )
+        printings(literature_value[j], computed_value, 2, j)
 
 
 def test_YPARAM(seeds):
@@ -163,18 +222,8 @@ def test_YPARAM(seeds):
                                             bias = "YPARAM",
                                             weight = random_bias[j])
 
-        print(
-            colors.CYAN
-            +"For weight = "
-            + str("{:.3f}".format(random_bias[j]))
-            + colors.END
-            +":\nExpected quantum value: "
-            + str("{:.6f}".format(expected_quantum_value[j]))
-            + "   Computed value: "
-            + str("{:.6f}".format(computed_value))
-            + "   Difference: "
-            + str(float('%.1g' % (expected_quantum_value[j] - computed_value)))
-            )
+        printings(expected_quantum_value[j], computed_value, weight = random_bias[j])
+
 
 def test_BPARAM(seeds):
 
@@ -208,38 +257,32 @@ def test_BPARAM(seeds):
     random_bias = [
                    uniform(0, (3 - np.sqrt(5)) / 4),
                    uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
+                   uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
                    uniform((1 + np.sqrt(5)) / 4, 1)
                    ]
 
     # Just an auxiliary variable for 'expected_quantum_value'.
-    mu = random_bias[1] * (1 - random_bias[1])
+    m = random_bias[1] * (1 - random_bias[1])
+    n = random_bias[2] * (1 - random_bias[2])
+
 
     # 3/4 + (1/4) * abs(1 - 2 * weight) represents the classical value for the 'BPARAM' bias.
     expected_quantum_value = [
                             0.75 + 0.25 * abs(1 - 2 * random_bias[0]),
-                            0.5 + 1 / np.sqrt(4 + 16 * mu) * (1 / np.sqrt(16 * mu) + np.sqrt(mu)),
-                            0.75 + 0.25 * abs(1 - 2 * random_bias[2])
+                            0.5 + 1 / np.sqrt(4 + 16 * m) * (1 / np.sqrt(16 * m) + np.sqrt(m)),
+                            0.5 + 1 / np.sqrt(4 + 16 * n) * (1 / np.sqrt(16 * n) + np.sqrt(n)),
+                            0.75 + 0.25 * abs(1 - 2 * random_bias[3])
                             ]
 
-    for j in range(0, 3):
+    for j in range(0, 4):
 
         computed_value = ut.find_QRAC_value(2, 2, seeds,
                                             verbose = False,
                                             bias = "BPARAM",
                                             weight = random_bias[j])
 
-        print(
-            colors.CYAN
-            + "For weight = "
-            + str("{:.3f}".format(random_bias[j]))
-            + colors.END
-            +":\nExpected quantum value: "
-            + str("{:.6f}".format(expected_quantum_value[j]))
-            + "   Computed value: "
-            + str("{:.6f}".format(computed_value))
-            + "   Difference: "
-            + str(float('%.1g' % (expected_quantum_value[j] - computed_value)))
-            )
+        printings(expected_quantum_value[j], computed_value, weight = random_bias[j] )
+
 
 if __name__ == "__main__":
 
@@ -263,7 +306,7 @@ if __name__ == "__main__":
     """
 
     # Fixing the seeds to 5.
-    seeds = 5
+    seeds = 1
 
     # Printing the header.
     print(
@@ -299,7 +342,7 @@ if __name__ == "__main__":
     print(
         colors.FAINT
         + colors.BOLD
-        + "Testing the y-biased 2ˆ2-->1 QRAC"
+        + "Testing the y-biased 2ˆ2-->1 QRAC for random weights"
         + colors.END
         )
     test_YPARAM(seeds)
@@ -309,7 +352,7 @@ if __name__ == "__main__":
     print(
         colors.FAINT
         + colors.BOLD
-        + "Testing the b-biased 2ˆ2-->1 QRAC"
+        + "Testing the b-biased 2ˆ2-->1 QRAC for random weights"
         + colors.END
         )
     test_BPARAM(seeds)
