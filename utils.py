@@ -459,7 +459,7 @@ def find_QRAC_value(
              )
         print(
             " " * 32
-            + "QRAC-tools 1.0 v")
+            + "QRAC-tools v1.0")
         print("=" * 80
             + "\n")
 
@@ -539,7 +539,7 @@ def find_QRAC_value(
             + "ˆ"
             + str(out)
             + "-->1 QRAC is "
-            + str(prob_value.round(10))
+            + str(max_prob_value.round(10))
             + ", found by the seed #"
             + str(seed_number + 1)
             + "."

@@ -7,7 +7,7 @@
 # ==================================================================================================
 """This file contains the a test script for the main functions of utils.py"""
 # ==================================================================================================
-# Imports: utils, numpy and sigfig
+# Imports: utils and numpy.
 # ==================================================================================================
 
 
@@ -55,6 +55,9 @@ def printings(value1, value2, n = None, d = None, weight = None):
     # Fixing the acceptable difference for expected and computed values to 1e-6.
     difference = 1e-6
 
+    # This command is to allow printing superscripts in the prompt.
+    superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
     # If the QRAC is biased, so its is desirable to print the weight by which it is biased. So the
     # printing must be different if no weight is attributed.
     if weight == None:
@@ -62,8 +65,7 @@ def printings(value1, value2, n = None, d = None, weight = None):
             colors.CYAN
             + "For the "
             + str(n)
-            + "ˆ"
-            + str(d)
+            + str(d).translate(superscript)
             + "-->1 QRAC:"
             + colors.END
             +"\nLiterature value: "
@@ -117,7 +119,7 @@ def test_qubit_qracs(seeds):
 
     Outputs
     -------
-    It prints a list cointaining the literatute quantum value, the computed quantum value and the
+    It prints a list containing the literature quantum value, the computed quantum value and the
     difference between both values, for each value of n.
 
     Reference
@@ -127,7 +129,7 @@ def test_qubit_qracs(seeds):
     Randomness, available in arXiv:0810.2937.
     """
 
-    # This is the theoretical quantum value provided by the literatute. For n = 2 and n = 3, the
+    # This is the theoretical quantum value provided by the literature. For n = 2 and n = 3, the
     # quantum value is known exactly.
     literature_value = {
                         2: (1 + 1 / np.sqrt(2)) / 2,
@@ -165,7 +167,7 @@ def test_higher_dim_qracs(seeds):
 
     Outputs
     -------
-    It prints a list cointaining the literatute quantum value, the computed quantum value and the
+    It prints a list containing the literature quantum value, the computed quantum value and the
     difference between both values, for each value of d.
 
     Reference
@@ -189,7 +191,7 @@ def test_YPARAM(seeds):
     Testing YPARAM bias
     -------------------
 
-    This function tests biased 2ˆ2-->1 QRACs. We consider the 'YPARAM' bias in which the 1st digit
+    This function tests biased 2ˆ2-->1 QRACs. We consider the 'YPARAM' bias in which the 1st entry
     of Alice is prefered with some weight. Then, we evaluate 'find_QRAC_value' for 3 distinct random
     weights.
 
@@ -201,7 +203,7 @@ def test_YPARAM(seeds):
 
     Outputs
     -------
-    It prints a list cointaining the expected quantum value, the computed quantum value and the
+    It prints a list containing the expected quantum value, the computed quantum value and the
     difference between both values, for each random weight of 'YPARAM' bias.
 
     Reference
@@ -209,10 +211,10 @@ def test_YPARAM(seeds):
     The values in 'expected_quantum_value' are to be published soon.
     """
 
-    # Defining the random weights with numpy.random.random().
+    # Defining the 3 random weights with numpy.random.random().
     random_bias = [random() for i in range(0, 3)]
 
-    # Since this value is not in the literatute yet, I'm naming it 'expected_quantum_value'.
+    # Since this value is not in the literature yet, I'm naming it 'expected_quantum_value'.
     expected_quantum_value = [0.5 + 0.5 * np.sqrt(2 * i ** 2 - 2 * i + 1) for i in random_bias]
 
     for j in range(0, 3):
@@ -231,7 +233,7 @@ def test_BPARAM(seeds):
     Testing BPARAM bias
     -------------------
 
-    This function tests biased 2ˆ2-->1 QRACs. We consider the 'BPARAM' bias in which the digit 0 is
+    This function tests biased 2ˆ2-->1 QRACs. We consider the 'BPARAM' bias in which the entry 0 is
     prefered to be retrieved with some weight. Then, we evaluate 'find_QRAC_value' for 3 distinct
     random weights.
 
@@ -243,7 +245,7 @@ def test_BPARAM(seeds):
 
     Outputs
     -------
-    It prints a list cointaining the expected quantum value, the computed quantum value and the
+    It prints a list containing the expected quantum value, the computed quantum value and the
     difference between both values, for each random weight of 'BPARAM' bias.
 
     Reference
@@ -253,7 +255,7 @@ def test_BPARAM(seeds):
 
     # Not all values of 'weight' produce quantum-advantaged QRACs for the 'BPARAM' bias. The first
     # and the last elements of random_bias are produced in the intervals where there is no quantum
-    # advantage. This is why the formulas in 'expected_quantum_value' are different.
+    # advantage.
     random_bias = [
                    uniform(0, (3 - np.sqrt(5)) / 4),
                    uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
@@ -261,18 +263,9 @@ def test_BPARAM(seeds):
                    uniform((1 + np.sqrt(5)) / 4, 1)
                    ]
 
-    # Just an auxiliary variable for 'expected_quantum_value'.
-    m = random_bias[1] * (1 - random_bias[1])
-    n = random_bias[2] * (1 - random_bias[2])
-
-
-    # 3/4 + (1/4) * abs(1 - 2 * weight) represents the classical value for the 'BPARAM' bias.
-    expected_quantum_value = [
-                            0.75 + 0.25 * abs(1 - 2 * random_bias[0]),
-                            0.5 + 1 / np.sqrt(4 + 16 * m) * (1 / np.sqrt(16 * m) + np.sqrt(m)),
-                            0.5 + 1 / np.sqrt(4 + 16 * n) * (1 / np.sqrt(16 * n) + np.sqrt(n)),
-                            0.75 + 0.25 * abs(1 - 2 * random_bias[3])
-                            ]
+    # The function expected_BPARAM(i) returns the correct quantum value for the appropriate value of
+    # 'weight'.
+    expected_quantum_value = [expected_BPARAM(i) for i in random_bias]
 
     for j in range(0, 4):
 
@@ -282,6 +275,34 @@ def test_BPARAM(seeds):
                                             weight = random_bias[j])
 
         printings(expected_quantum_value[j], computed_value, weight = random_bias[j] )
+
+def expected_BPARAM(weight):
+
+    """
+    An auxiliary function for testing BPARAM. For bias in the retrived entry b, not all values of
+    'weight' produce a QRAC with quantum advantage. In particular, the only range where quantum ad-
+    vantage is expected is in the interval [(3 - sqrt(5)) / 4, (1 + sqrt(5)) / 4].
+
+    Input
+    -----
+    weight: a float.
+        'weight' represents the weight with which the QRAC is biased for the BPARAM case.
+
+    Output
+    The expected quantum value for the correct range.
+    """
+
+    if (3 - np.sqrt(5)) / 4 < weight < (1 + np.sqrt(5)) / 4:
+
+        # Just an auxiliary variable for this interval.
+        m = weight * (1 - weight)
+
+        return 0.5 + 1 / np.sqrt(4 + 16 * m) * (1 / np.sqrt(16 * m) + np.sqrt(m))
+
+    # There is just one interval inside where 'weight' produces quantum advantage. If 'weight' is
+    # not contained inside the interval, the code returns the classical value.
+    else:
+        return 0.75 + 0.25 * abs(2 * weight - 1)
 
 
 if __name__ == "__main__":
@@ -294,19 +315,19 @@ if __name__ == "__main__":
     follows.
 
     1. Qubit QRACs. QRACs whose local dimension is 2.
-    2. 2-digit QRACs. Here referred in the function 'test_higher_dim_qracs'. QRACs whose number of
-    digits of Alice is exactly 2.
-    3. 2ˆ2-->1 QRAC with bias in the requested digit y. Here referred in the function 'test_YPARAM'.
-    4. 2ˆ2-->1 QRAC with bias in the retrieved digit b. Here referred in the function 'test_BPARAM'.
+    2. 2-entries QRACs. Here referred in the function 'test_higher_dim_qracs'. QRACs whose number of
+    entries of Alice is exactly 2.
+    3. 2ˆ2-->1 QRAC with bias in the requested entry y. Here referred in the function 'test_YPARAM'.
+    4. 2ˆ2-->1 QRAC with bias in the retrieved entry b. Here referred in the function 'test_BPARAM'.
 
     Outputs
     -------
-    It prints a list cointaining the literatute quantum value, the computed quantum value and the
+    It prints a list containing the literature quantum value, the computed quantum value and the
     difference between both values, for each case.
     """
 
     # Fixing the seeds to 5.
-    seeds = 1
+    seeds = 5
 
     # Printing the header.
     print(
@@ -314,7 +335,7 @@ if __name__ == "__main__":
         + "=" * 80
         + "\n"
         + " " * 32
-        + "QRAC-tools 1.0 v\n"
+        + "QRAC-tools v1.0\n"
         + "=" * 80
         + "\n")
 
@@ -342,7 +363,7 @@ if __name__ == "__main__":
     print(
         colors.FAINT
         + colors.BOLD
-        + "Testing the y-biased 2ˆ2-->1 QRAC for random weights"
+        + "Testing the y-biased 2\u00b2-->1 QRAC for 3 random weights"
         + colors.END
         )
     test_YPARAM(seeds)
@@ -352,7 +373,7 @@ if __name__ == "__main__":
     print(
         colors.FAINT
         + colors.BOLD
-        + "Testing the b-biased 2ˆ2-->1 QRAC for random weights"
+        + "Testing the b-biased 2\u00b2-->1 QRAC for 4 random weights"
         + colors.END
         )
     test_BPARAM(seeds)
