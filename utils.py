@@ -23,6 +23,13 @@ from scipy.linalg import sqrtm
 from itertools import product
 
 
+# Bound for checkings
+BOUND = 1e-7
+PROB_BOUND = 1e-9
+MEAS_BOUND = 5e-7
+MUB_BOUND = 1e-5
+
+
 def generate_random_measurements(dim, out):
 
     """
@@ -48,12 +55,9 @@ def generate_random_measurements(dim, out):
         The variable measurement represent a random measurement with 'out' outcomes and dimension
         'dim'.
     """
-    # Bound for the checkings.
-    BOUND = 1e-7
 
     # Trying to generate the measurement for 10 times. If, in a certain iteration, a suitable measu-
-    # rement is not produced, the code skips the iteration and tries again using the command 'conti-
-    # nue'.
+    # rement is not produced, the code skips the iteration in the "CHECKING" points.
     attempts = 0
     while attempts < 10:
         attempts += 1
@@ -78,46 +82,48 @@ def generate_random_measurements(dim, out):
 
             partial_meas.append(random_herm)
 
-        partial_sum = np.sum(partial_meas, axis=0)
+        partial_sum = np.sum(partial_meas, axis = 0)
 
         # CHECKING if 'partial_sum' is full-rank
-        if nalg.matrix_rank(partial_sum, tol=BOUND, hermitian=True) != dim:
-            continue
+        full_rank = nalg.matrix_rank(partial_sum, tol = BOUND, hermitian = True) == dim
 
-        # Initializing an empty list.
-        measurement = []
+        if full_rank:
 
-        # This is the operator I will use to rescale the 'partial_meas' list. It is only the inverse
-        # square root of 'partial_sum'.
-        inv_sqrt = nalg.inv(sqrtm(partial_sum))
+            # Initializing an empty list.
+            measurement = []
 
-        # Generating the random measurement operators and appending to the list 'measurement'.
-        flag = False
-        for i in range(0, out):
+            # This is the operator I will use to rescale the 'partial_meas' list. It is only the in-
+            # verse square root of 'partial_sum'.
+            inv_sqrt = nalg.inv(sqrtm(partial_sum))
 
-            # Rescaling 'partial_meas[i]'
-            M = inv_sqrt @ partial_meas[i] @ inv_sqrt
-            # Enforcing hermiticity
-            M = 0.5 * (M + M.conj().T)
+            # Generating the random measurement operators and appending to the list 'measurement'.
+            error = False
+            for i in range(0, out):
 
-            measurement.append(M)
+                # Rescaling 'partial_meas[i]'
+                M = inv_sqrt @ partial_meas[i] @ inv_sqrt
+                # Enforcing hermiticity
+                M = 0.5 * (M + M.conj().T)
 
-            # CHECKING if M is positive semidefinite. Recall that eigh produces ordered eigenvalues.
-            # It suffices to check if the first eigenvalue is non-negative. In negative case, flag
-            # is changed to True and another iteration of the while loop is started with 'continue'.
-            eigval, eigvet = nalg.eigh(M)
-            if eigval[0] < -BOUND:
-                flag = True
+                measurement.append(M)
 
-        if flag:
-            continue
+                # CHECKING if M is positive semidefinite. Recall that eigh produces ordered eigenva-
+                # lues. It suffices to check if the first eigenvalue is non-negative. If it is not
+                # the case, 'error' is changed to True and another iteration of the while loop will
+                # start.
+                eigval, eigvet = nalg.eigh(M)
 
-        # Last check. CHECKING if the measurement operators sum to identity
-        sum = np.sum(measurement, axis=0)
-        if nalg.norm(sum - np.eye(dim)) > BOUND:
-            continue
+                if eigval[0] < -BOUND:
+                    error = True
 
-        return measurement
+            if not error:
+
+                # Last check. CHECKING if the measurement operators sum to identity
+                sum = np.sum(measurement, axis = 0)
+                sum_to_identity = nalg.norm(sum - np.eye(dim)) < BOUND
+
+                if sum_to_identity:
+                    return measurement
 
     raise RuntimeError("a random measurement cannot be generated")
 
@@ -224,7 +230,7 @@ def opt_state(operators_list, dim):
 
     # The 'average success probability' is defined as simply the sum of the elements in 'operators_
     # list'.
-    sum = np.sum(operators_list, axis=0)
+    sum = np.sum(operators_list, axis = 0)
 
     # numpy.eigh provides the eigenvalues and eigenvectors ordered from the smallest to the largest.
     eigval, eigvet = nalg.eigh(sum)
@@ -340,7 +346,7 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
     # Appending the variables to the list:
     for i in range(0, out):
-        M_vars.append(cp.Variable((dim, dim), hermitian=True))
+        M_vars.append(cp.Variable((dim, dim), hermitian = True))
 
     # Defining objective function:
     prob_guess = 0
@@ -349,14 +355,13 @@ def opt_meas(opt_preps_sum, dim, n, out):
 
     # Defining constraints:
     constr = []
-    sum = 0
     for i in range(0, out):
 
         # M must be positive semi-definite.
         constr.append(M_vars[i] >> 0)
 
     # The elements of M_vars must sum to identity.
-    sum = cp.sum(M_vars, axis=0)
+    sum = cp.sum(M_vars, axis = 0)
     constr.append(sum == np.eye(dim))
 
     # Defining the SDP and solving. CVXPY cannot recognize the objective function is real.
@@ -378,8 +383,8 @@ def find_QRAC_value(
     seeds: int,
     out: int = None,
     verbose: bool = True,
-    PROB_BOUND: float = 1e-9,
-    MEAS_BOUND: float = 5e-7,
+    prob_bound: float = PROB_BOUND,
+    meas_bound: float = MEAS_BOUND,
     bias: str = None,
     weight = None
 ):
@@ -396,8 +401,8 @@ def find_QRAC_value(
         3. Optimize the measurements for the set of optimal preparations found in step 2 using 'find
         _opt_meas'.
         4. Check if the variables 'prob_value' and 'M' are converging. If not, return to step 2 till
-        the difference between 'previous_prob_value' and 'prob_value' is smaller than PROB_BOUND.
-        Also, the loop should terminate either when 'max_norm_difference' is smaller than MEAS_BOUND
+        the difference between 'previous_prob_value' and 'prob_value' is smaller than prob_bound.
+        Also, the loop should terminate either when 'max_norm_difference' is smaller than meas_bound
         or when the number of iterations is bigger than 'iterations.
 
     This function also checks if the obtained optimal measurements are MUBs by activating 'determine
@@ -417,20 +422,20 @@ def find_QRAC_value(
     verbose: True or False. True by default. [optional]
         If true, it activates the function determine_meas_status for details about the optimized
         measurements.
-    PROB_BOUND: a float. [optional]
+    prob_bound: a float. [optional]
         Convergence criterion for the variable 'prob_value'. When the difference between 'prob_va-
-        lue' and 'previous_prob_value' is less than PROB_BOUND, the algorithm interprets prob_value
+        lue' and 'previous_prob_value' is less than prob_bound, the algorithm interprets prob_value
         = previous_prob_value.
-    MEAS_BOUND: a float. [optional]
-        The same criterion as in PROB_BOUND but for the norms of the measurement operators in the
+    meas_bound: a float. [optional]
+        The same criterion as in prob_bound but for the norms of the measurement operators in the
         variable M.
     bias: a dictionary of size n * out ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
         The dictionary 'bias' represents a order-(n+2) tensor enconding the bias in some given QRAC.
     weight: a float or a list of floats of size 'out'.
-        The varible 'weight' carries the weight (or weights) with which the QRAC is biased. If it is
-        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
-        must sum to 1.
+        The variable 'weight' carries the weight (or weights) with which the QRAC is biased. If it
+        is a single float, it must be a positive number between 0 and 1. If it is a list of floats,
+        it must sum to 1.
         Note that, for the case in which 'weight' is a single float, this variable is symmetrical.
         That is, setting weight = 0.5 has the same effect as making bias = None.
 
@@ -495,10 +500,10 @@ def find_QRAC_value(
 
         # The variable 'prob_value' converges faster than 'M', so that the stopping condition for
         # 'prob_value' can be smaller. For the measurements, we either stop when 'max_norm_differen-
-        # ce' is smaller than MEAS_BOUND or when the number of iterations is bigger than 'itera-
+        # ce' is smaller than meas_bound or when the number of iterations is bigger than 'itera-
         # tions'.
-        while (abs(previous_prob_value - prob_value) > PROB_BOUND) or (
-            max_norm_difference > MEAS_BOUND and iter_count < iterations
+        while (abs(previous_prob_value - prob_value) > prob_bound) or (
+            max_norm_difference > meas_bound and iter_count < iterations
         ):
 
             previous_prob_value = prob_value
@@ -520,7 +525,7 @@ def find_QRAC_value(
         if verbose:
             if iter_count >= iterations:
                 print(
-                    "The measurements have not converged below the MEAS_BOUND for the seed #"
+                    "The measurements have not converged below the measurement bound for the seed #"
                     + str(i + 1)
                     + "."
                     )
@@ -584,8 +589,6 @@ def determine_meas_status(M, dim, n, out):
     ------
     Features about the input measurement M.
     """
-    # Bound for the checkings.
-    BOUND = 1e-7
 
     # Flag for the MUB checking. If the measurement operators are neither rank-one or projective,
     # there is no sense on checking if they can be constructed out of MUBs.
@@ -610,12 +613,12 @@ def determine_meas_status(M, dim, n, out):
 
     # Checking if the measurement operators sum to identity.
     for i in range(0, n):
-        sum = np.sum(M[i], axis=0)
+        sum = np.sum(M[i], axis = 0)
         if nalg.norm(sum - np.eye(dim)) > BOUND:
             raise RuntimeError("measurement operators does not sum to identity")
 
     # This will return me an array with the ranks of all measurement operators.
-    rank = nalg.matrix_rank(M, tol=BOUND, hermitian=True)
+    rank = nalg.matrix_rank(M, tol = BOUND, hermitian = True)
     # Now checking if all of the measurement operators are rank-one.
     if not (rank == np.ones((n, out), dtype=np.int8)).all():
         flag = False
@@ -675,7 +678,7 @@ def determine_meas_status(M, dim, n, out):
                     )
 
 
-def check_if_MUBs(P, Q, out, MUB_BOUND = 1e-5):
+def check_if_MUBs(P, Q, out, mub_bound = MUB_BOUND):
 
     """
     Check if two measurements are mutually unbiased
@@ -693,15 +696,15 @@ def check_if_MUBs(P, Q, out, MUB_BOUND = 1e-5):
         Another measurement with 'out' outcomes acting on dimension 'dim'.
     out: an integer.
         out represents the number of outcomes of the measurements.
-    MUB_BOUND: a float.
-        If PQP-P < MUB_BOUND, then the equation PQP = P is considered satisfied and the measurements
+    mub_bound: a float.
+        If PQP-P < mub_bound, then the equation PQP = P is considered satisfied and the measurements
         P and Q are considered mutually unbiased.
 
     Output
     ------
     status: a dictionary with two entries. A boolean variable and a float.
         The first key of this dictionary is named 'boolean'. If 'True', P and Q are considered mutu-
-        ally unbiased up to the numerical precision of MUB_BOUND. The second key is named 'max_er-
+        ally unbiased up to the numerical precision of mub_bound. The second key is named 'max_er-
         ror' and contains the maximum norm difference by which the measurement operators of P and Q
         do not satisfy the equations PQP = P and QPQ = Q.
 
@@ -723,7 +726,7 @@ def check_if_MUBs(P, Q, out, MUB_BOUND = 1e-5):
             errors.append(errorP)
             errors.append(errorQ)
 
-            if errorP > MUB_BOUND or errorQ > MUB_BOUND:
+            if errorP > mub_bound or errorQ > mub_bound:
                 status["boolean"] = False
 
     status["max error"] = max(errors)
@@ -777,10 +780,10 @@ def generate_bias(n, out, bias, weight):
     5. "YVEC". Bias in the requested digit y. The y-th element of i[1] is prefered with probability
     'weight[y]'.
 
-    6. "BPARAM". Bias in the retrived output b. The element 0 of i[2] is prefered with probability
+    6. "BPARAM". Bias in the retrieved output b. The element 0 of i[2] is prefered with probability
     'weight'.
 
-    7. "BVEC". Bias in the retrived output b. The b-th element of i[2] is prefered with probability
+    7. "BVEC". Bias in the retrieved output b. The b-th element of i[2] is prefered with probability
     'weight[b]'.
 
     Inputs
@@ -793,9 +796,9 @@ def generate_bias(n, out, bias, weight):
         It encodes the type of bias desired for the computation. There are seven possibilities: "XDI
         AG", "XCHESS", "XPARAM", "YPARAM", "YVEC", "BPARAM" and "BVEC".
     weight: a float or a list of floats of size 'out'.
-        The varible 'weight' carries the weight (or weights) with which the QRAC is biased. If it is
-        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
-        must sum to 1.
+        The variable 'weight' carries the weight (or weights) with which the QRAC is biased. If it
+        is a single float, it must be a positive number between 0 and 1. If it is a list of floats,
+        it must sum to 1.
         Note that, for the case in which 'weight' is a single float, this variable is symmetrical.
         That is, setting weight = 0.5 has the same effect as making bias = None.
 
@@ -805,6 +808,37 @@ def generate_bias(n, out, bias, weight):
     tes. bias_tensor.values() are floats.
         bias_tensor represents a order-(n+2) tensor enconding the bias in some given QRAC.
     """
+
+    # This first part of the funtion is just for assertions.
+
+    # sw/mw stands for single/multiple weights.
+    valid_bias_types_sw = ("XDIAG", "XCHESS", "XPARAM", "YPARAM", "BPARAM")
+    valid_bias_types_mw = ("YVEC", "BVEC")
+
+    assert bias is None or bias in valid_bias_types_sw or bias in valid_bias_types_mw, (
+        "Available options for bias are: "
+         "XDIAG, XCHESS, XPARAM, YPARAM, YVEC, BPARAM and BVEC."
+         )
+
+    if bias is not None:
+        assert weight is not None, "a value for 'weight' must be provided"
+
+    if bias in valid_bias_types_sw:
+        assert 0 <= weight <= 1, "'weight' must range between 0 and 1."
+
+    elif bias in valid_bias_types_mw:
+
+        if bias == "YVEC":
+
+            assert len(weight) == n, "the expected size of 'weight' is n"
+            assert round(sum(weight), 7) == 1, "the weights must sum to one"
+
+        elif bias == "BVEC":
+
+            assert len(weight) == out, "the expected size of 'weight' is n"
+            assert round(sum(weight), 7) == 1, "the weights must sum to one"
+
+    # Now, the code actually starts.
 
     # Initializing an empty dicitonary.
     bias_tensor = {}
@@ -823,99 +857,70 @@ def generate_bias(n, out, bias, weight):
 
             # Separating in cases. If bias = None, none of the below cases will match, and the re-
             # sulting bias_tensor will be unbiased.
-            if bias == None:
+            if bias is None:
                 continue
 
-            elif not isinstance(bias, str):
-                raise TypeError("string argument expected for 'bias', got "
-                + str(type(bias).__name__))
+            elif bias == "XDIAG":
 
-            elif weight == None:
-                raise AssertionError("a value for 'weight' must be provided")
+                # This is a normalization constant for the XDIAG case. It ensures that sum(bias_
+                # tensor.values()) == 1.
+                norm = (2 * weight - 1) / (out ** (n - 1)) - weight + 1
 
-            elif (
-            bias == "XDIAG" or
-            bias == "XCHESS" or
-            bias == "XPARAM" or
-            bias == "YPARAM" or
-            bias == "BPARAM"
-            ):
+                # If i[0] is a diagonal element, then it is prefered with 'weight'. If not, it
+                # is prefered with 1 - weight. The other cases follow similarly.
+                if len(set(i[0])) == 1:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                assert 0 <= weight <= 1, "'weight' must range between 0 and 1."
+            elif bias == "XCHESS":
 
-                if bias == "XDIAG":
+                # Here the normalization depends on the parity of out ** n. Recall that parity(o
+                # ut) == parity(out ** n), for positive n and out.
+                if out % 2 == 0:
+                    norm = 0.5
+                else:
+                    norm = (1 + (n - 2 * n * weight) / (n * out ** n)) / 2
 
-                    # This is a normalization constant for the XDIAG case. It ensures that sum(bias_
-                    # tensor.values()) == 1.
-                    norm = (2 * weight - 1) / (out ** (n - 1)) - weight + 1
+                if sum(i[0]) % 2 == 1:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                    # If i[0] is a diagonal element, then it is prefered with 'weight'. If not, it
-                    # is prefered with 1 - weight. The other cases follow similarly.
-                    if len(set(i[0])) == 1:
-                        bias_tensor[i] = weight * bias_tensor[i] / norm
-                    else:
-                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+            elif bias == "XPARAM":
 
-                elif bias == "XCHESS":
+                norm = 1 - weight - (n - 2 * n * weight) / (n * out ** n)
 
-                    # Here the normalization depends on the parity of out ** n. Recall that parity(o
-                    # ut) == parity(out ** n), for positive n and out.
-                    if out % 2 == 0:
-                        norm = 0.5
-                    else:
-                        norm = (1 + (n - 2 * n * weight) / (n * out ** n)) / 2
+                if i[0] == (0,) * n:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                    if sum(i[0]) % 2 == 1:
-                        bias_tensor[i] = weight * bias_tensor[i] / norm
-                    else:
-                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+            elif bias == "YPARAM":
 
-                elif bias == "XPARAM":
+                norm = 1 - weight - 1 / n + (2 * weight) / n
 
-                    norm = 1 - weight - (n - 2 * n * weight) / (n * out ** n)
+                if i[1] == 0:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
-                    if i[0] == (0,) * n:
-                        bias_tensor[i] = weight * bias_tensor[i] / norm
-                    else:
-                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+            elif bias == "BPARAM":
 
-                elif bias == "YPARAM":
+                norm = 1 - weight - 1 / out + (2 * weight) / out
 
-                    norm = 1 - weight - 1 / n + (2 * weight) / n
-
-                    if i[1] == 0:
-                        bias_tensor[i] = weight * bias_tensor[i] / norm
-                    else:
-                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
-
-                elif bias == "BPARAM":
-
-                    norm = 1 - weight - 1 / out + (2 * weight) / out
-
-                    if i[2] == 0:
-                        bias_tensor[i] = weight * bias_tensor[i] / norm
-                    else:
-                        bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                if i[2] == 0:
+                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                else:
+                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
 
             elif bias == "YVEC":
-
-                assert len(weight) == n, "the expected size of 'weight' is n"
-                assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
                 bias_tensor[i] = n * weight[i[1]] * bias_tensor[i]
 
             elif bias == "BVEC":
 
-                assert len(weight) == out, "the expected size of 'weight' is d"
-                assert round(sum(weight), 7) == 1, "the weights must sum to one"
-
                 bias_tensor[i] = out * weight[i[2]] * bias_tensor[i]
-
-            else:
-                raise RuntimeError(
-                 "Available options for bias are: XDIAG, XCHESS,"
-                 " XPARAM, YPARAM, YVEC, BPARAM and BVEC."
-                 )
 
         else:
             bias_tensor[i] = 0
