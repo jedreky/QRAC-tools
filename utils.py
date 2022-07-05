@@ -9,9 +9,8 @@
 """This file contains the main functions for optimizing an nˆ(dim) --> 1 QRAC. The main function can
 be accessed by the command 'find_QRAC_value'."""
 # ==================================================================================================
-# Imports: cvxpy, numpy, scipy and itertools
+# Imports: time, cvxpy, numpy, scipy and itertools
 # ==================================================================================================
-
 
 import cvxpy as cp
 import numpy as np
@@ -21,7 +20,14 @@ import numpy.linalg as nalg
 from numpy.random import rand
 from scipy.linalg import sqrtm
 from itertools import product
+from termcolor import colored
+from time import process_time
 
+class colors:
+    CYAN =  '\033[96m'
+    BOLD =  '\033[1m'
+    FAINT = '\033[2m'
+    END =   '\033[0m'
 
 # Bound for checkings
 BOUND = 1e-7
@@ -377,17 +383,16 @@ def opt_meas(opt_preps_sum, dim, n, out):
 # ==================================================================================================
 # ---------------------------------------------- MAIN ----------------------------------------------
 # ==================================================================================================
-def find_QRAC_value(
-    n: int,
-    dim: int,
-    seeds: int,
-    out: int = None,
-    verbose: bool = True,
-    prob_bound: float = PROB_BOUND,
-    meas_bound: float = MEAS_BOUND,
-    bias: str = None,
-    weight = None
-):
+def find_QRAC_value(n: int,
+                    dim: int,
+                    seeds: int,
+                    out: int = None,
+                    verbose: bool = True,
+                    prob_bound: float = PROB_BOUND,
+                    meas_bound: float = MEAS_BOUND,
+                    bias: str = None,
+                    weight = None
+                   ):
     """
     Find the Quantum Random Acces Code quantum value
     ------------------------------------------------
@@ -415,7 +420,7 @@ def find_QRAC_value(
     dim: an integer.
         The dimension of the measurement operators.
     seeds: an integer.
-        Represents the number of random seeds as the starting point of the see-saw algorithm.
+        Represents the number of random seeds as the starting points of the see-saw algorithm.
     out: an integer. [optional]
         The number of outcomes for the measurements. If no value is attributed to 'out', then out =
         dim.
@@ -441,38 +446,78 @@ def find_QRAC_value(
 
     Output
     ------
-    prob_value: a float.
-        Returned if verbose = False. The optimized value of the 'average success probability' for
-        the nˆ(dim) --> 1 QRAC. If verbose = True, the function returns a report containing details
-        of the computation.
+    report: a dictionary.
+        report contains the following keys:
+        n: an integer
+            n represents the number of distinct measurements of the QRAC.
+        dimension: an integer.
+            Dimension of the measurement operators.
+        seeds: an integer.
+            The number of random seeds as the starting points of the see-saw algorithm.
+        outcomes: an integer.
+            The number of outcomes for the measurements.
+        optimal value: a float.
+            The optimal value computed for the nˆ(out) --> 1 QRAC.
+        optimal measurements: a list of lists whose elements are matrices of size dim x dim.
+            'optimal measurements' contains a nested list. Each fundamental list corresponds to a
+            different measurement in the QRAC task.
+        best seed number: an integer.
+            The seed number that achieves the largest prob_value among all seeds.
+        seed convergence: a list of integers.
+            It contains the number of the seeds whose measurements could converge to meas_bound.
+        average time: a float.
+            The average time of computation for among all seeds.
+        average iterations: a float.
+            The average number of iterations until convergence among all seeds.
+        rank: a numpy array.
+            'rank' contains the ranks of all measurement operators for the optimal realization.
+        projectiveness: a dictionary.
+            it contains two keys:
+            projective: a numpy array with boolean elements.
+                If True, the measurement operator is considered projective.
+            errors: a numpy array whose elements are floats.
+                It contains a measure of projectiveness for a given operator P. It can be calculated
+                using the Frobenius norm of Pˆ2 - P.
+        MUB check: a nested dicitonary.
+            Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., out. Every element
+            is a dictionary cointaing 'status', which is obtained from the function 'check_if_MUBs'.
+
+    If verbose = True, report is printed using the funtion "printings".
     """
-    # Starting variables max_prob_value and M_optimal.
-    max_prob_value = 0
-    M_optimal = 0
-
-    # Maximum number of iterations for the see-saw loop.
-    iterations = 100
-
     # If no value is attributed for the number of outcomes, then I set out = dim.
     if out is None:
         out = dim
 
-    if verbose:
-        print(
-            "\n"
-            + "=" * 80
-             )
-        print(
-            " " * 32
-            + "QRAC-tools v1.0")
-        print("=" * 80
-            + "\n")
+    # Creating an empty dictionary 'report'. If verbose = True, then we print the information con-
+    # tained in the report. If not, the function return 'report'.
+    report = {}
+    report["seeds"] = seeds
+    report["n"] = n
+    report["outcomes"] = out
+    report["dimension"] = dim
+
+    # Starting the entries "optimal_value" and "optimal measurement" as zeros.
+    report["optimal value"] = 0
+    report["optimal measurements"] = 0
+
+    # Maximum number of iterations for the see-saw loop.
+    iterations = 100
 
     # Here I am generating the bias and saving it in the tensor 'bias_tensor'. By default, the QRAC
     # is unbiased, so the 'bias = None'.
     bias_tensor = generate_bias(n, out, bias, weight)
 
+    # List of times, and number of iterations for each seed. Also 'seed_convergence' stores the in-
+    # formation of whether the measurements of a given seed have converged below MEAS_BOUND. These
+    # lists will contain information to be printed in the final report.
+    times_list = []
+    iterations_list = []
+    seed_convergence = []
+
     for i in range(0, seeds):
+
+        # Marking the start of the time count.
+        start_time = process_time()
 
         M = []
         for j in range(0, n):
@@ -521,46 +566,201 @@ def find_QRAC_value(
             previous_M = M
             iter_count += 1
 
-        # Print message that only 'prob_value' converged.
-        if verbose:
-            if iter_count >= iterations:
-                print(
-                    "The measurements have not converged below the measurement bound for the seed #"
-                    + str(i + 1)
-                    + "."
-                    )
+        # Saving the information on whether, for a given seed, there was convergence of measurements
+        # or not.
+        if iter_count < iterations:
+            seed_convergence.append(i + 1)
 
         # Selecting the largest problem value from all distinct random seeds.
-        if prob_value > max_prob_value:
-            max_prob_value = prob_value
-            M_optimal = M
-            seed_number = i
+        if prob_value > report["optimal value"]:
+            report["optimal value"] = prob_value
+            report["optimal measurements"] = M
+            report["best seed number"] = i + 1
 
-    # Just printing the max_prob_value.
-    if verbose:
-        print(
-            "The optimized value for the "
-            + str(n)
-            + "ˆ"
-            + str(out)
-            + "-->1 QRAC is "
-            + str(max_prob_value.round(10))
-            + ", found by the seed #"
-            + str(seed_number + 1)
-            + "."
-            )
+        # Just append the information of the computation time and the number of iterations.
+        times_list.append(process_time() - start_time)
+        iterations_list.append(iter_count)
 
-    # verbose is True by default.
+    # Saving data in the dictionary 'report' to be printed at the ending of the computation.
+    report["seed convergence"] = seed_convergence
+    report["average time"] = sum(times_list) / seeds
+    report["average iterations"] = sum(iterations_list) / seeds
+
+    report["rank"], report["projectiveness"], report["MUB check"]= (
+        determine_meas_status(report["optimal measurements"], dim, n, out)
+                                               )
+    # verbose is True by default. If True, it prints a report of the computation. If False, it re-
+    # turns the dictionary 'report'.
     if verbose:
-        determine_meas_status(M_optimal, dim, n, out)
-        print(
-            '\n'
-            + '-' * 30
-            + " End of computation "
-            + '-' * 30
-            )
+        printings(report)
     else:
-        return prob_value
+        return report
+
+
+def printings(report):
+
+    """
+    Printings
+    ---------
+
+    This function simply print a report of the computation if verbose = True. If consists of two
+    parts: a summary of the computation and an analysis of the optimal realization found by the see-
+    saw algorithm.
+
+    Inputs
+    ------
+    report: a dictionary.
+        report contains the following keys:
+        n: an integer
+            n represents the number of distinct measurements of the QRAC.
+        dimension: an integer.
+            Dimension of the measurement operators.
+        seeds: an integer.
+            The number of random seeds as the starting points of the see-saw algorithm.
+        outcomes: an integer.
+            The number of outcomes for the measurements.
+        optimal value: a float.
+            The optimal value computed for the nˆ(out) --> 1 QRAC.
+        optimal measurements: a list of lists whose elements are matrices of size dim x dim.
+            'optimal measurements' contains a nested list. Each fundamental list corresponds to a
+            different measurement in the QRAC task.
+        best seed number: an integer.
+            The seed number that achieves the largest prob_value among all seeds.
+        seed convergence: a list of integers.
+            It contains the number of the seeds whose measurements could converge to meas_bound.
+        average time: a float.
+            The average time of computation for among all seeds.
+        average iterations: a float.
+            The average number of iterations until convergence among all seeds.
+        rank: a numpy array.
+            'rank' contains the ranks of all measurement operators for the optimal realization.
+        projectiveness: a dictionary.
+            it contains two keys:
+            projective: a numpy array with boolean elements.
+                If True, the measurement operator is considered projective.
+            errors: a numpy array whose elements are floats.
+                It contains a measure of projectiveness for a given operator P. It can be calculated
+                using the Frobenius norm of Pˆ2 - P.
+        MUB check: a nested dicitonary.
+            Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., out. Every element
+            is a dictionary cointaing 'status', which is obtained from the function 'check_if_MUBs'.
+    """
+
+    # This command is to allow printing superscripts in the prompt.
+    superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+
+    # Printing header
+    print(f"\n" +
+          f"=" * 80 +
+          f"\n" +
+          f" " * 32 +
+          f"QRAC-tools v1.0\n" +
+          f"=" * 80 +
+          f"\n"
+         )
+
+    # Printing the first part of the report
+    print(colors.BOLD + colors.FAINT +
+          f"-" * 28 +
+          f" Summary of computation " +
+          f"-" * 28 +
+          colors.END +
+          f"\n"
+         )
+
+    print(f"Number of random seeds: {report['seeds']}\n"
+          f"Best seed: {report['best seed number']} \n"
+          f"Seeds whose measurements converged below MEAS_BOUND: "
+          f"{', '.join(str(i) for i in report['seed convergence'])}\n"
+          f"Average time until convergence: {round(report['average time'], 5)} s\n"
+          f"Average number of iterations until convergence: "
+          f"{round(report['average iterations'])}\n"
+         )
+
+    # Printing the second part of the report. Analysis of the optimal realisation.
+    print(colors.BOLD + colors.FAINT +
+          f"-" * 21 +
+          f" Analysis of the optimal realisation " +
+          f"-" * 22 +
+          colors.END +
+          f"\n"
+         )
+    print(f"Optimal value for the "
+          f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
+          f" {report['optimal value'].round(10)}"
+          f"\n"
+         )
+
+    # Printing the ranks of the measurement operators.
+    print(colors.CYAN +
+          f"Measurement operator ranks" +
+          colors.END
+         )
+    line = 0
+    for i in report["rank"]:
+        print(f"M[{str(line)}] ranks: ",
+              f"  ".join(map(str, i))
+             )
+        line += 1
+
+    print("")
+
+    # Printing whether the measurement operators are projective or not.
+    print(colors.CYAN +
+          f"Measurement operator projectiveness" +
+          colors.END
+         )
+
+    projective = report["projectiveness"]["projective"]
+    errors = report["projectiveness"]["errors"]
+
+    for i in range(0, report["n"]):
+        for j in range(0, report["outcomes"]):
+            print(f"M[{str(i)}, {str(j)}]:  Projective\t\t"
+                  f"{str(float('%.3g' % errors[i][j]))}"
+                  if projective[i][j]
+                  else
+                  f"M[{str(i)}, {str(j)}]:  Not projective\t"
+                  f"{str(float('%.3g' % errors[i][j]))}"
+                 )
+
+
+    # This message clarifies to the user the measure of projectiveness we are using.
+    print(colors.FAINT + colors.BOLD +
+          f"The right most value corresponds to the Frobenius norm of the operator "
+          f"M{str(2).translate(superscript)}-M\n" +
+          colors.END
+         )
+
+    if report["MUB check"] is not None:
+        keys = list(report["MUB check"].keys())
+
+        print(colors.CYAN +
+              f"Mutually unbiasedness of measurements" +
+              colors.END
+             )
+
+        for i in keys:
+            print(f"M[{str(i[0])}] and M[{str(i[1])}]:  MUM\t\t"
+                  f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
+                  if report['MUB check'][i]['boolean']
+                  else
+                  f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUM\t\t"
+                  f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
+                 )
+
+        print(colors.FAINT + colors.BOLD +
+              f"The right most value corresponds to the largest Frobenius norm of the operator \n"
+              f"(out)*PQP-P, where P and Q are measurement operators of two distinct measurements\n"
+              + colors.END
+             )
+
+    # Printing the footer of the report.
+    print(f"-" * 30 +
+          f" End of computation " +
+          f"-" * 30
+         )
+
 
 def determine_meas_status(M, dim, n, out):
 
@@ -587,14 +787,23 @@ def determine_meas_status(M, dim, n, out):
 
     Output
     ------
-    Features about the input measurement M.
+    rank: a numpy array.
+        'rank' contains the ranks of all measurement operators for the optimal realization.
+    projectiveness: a dictionary.
+        it contains two keys:
+        projective: a numpy array with boolean elements.
+            If True, the measurement operator is considered projective.
+        errors: a numpy array whose elements are floats.
+            It contains a measure of projectiveness for a given operator P. It can be calculated
+            using the Frobenius norm of Pˆ2 - P.
+    MUB check: a nested dicitonary.
+        Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., out. Every element is
+        a dictionary cointaing 'status', which is obtained from the function 'check_if_MUBs'.
     """
 
     # Flag for the MUB checking. If the measurement operators are neither rank-one or projective,
     # there is no sense on checking if they can be constructed out of MUBs.
     flag = True
-
-    print("")
 
     # Checking if the measurement operators are Hermitian.
     for i in range(0, n):
@@ -622,60 +831,38 @@ def determine_meas_status(M, dim, n, out):
     # Now checking if all of the measurement operators are rank-one.
     if not (rank == np.ones((n, out), dtype=np.int8)).all():
         flag = False
-        print("Measurement operators are not rank-one!")
-
-        # Printing the ranks of the measurement operators.
-        line = 0
-        for i in rank:
-            print("M[" + str(line) + "] ranks: ", "  ".join(map(str, i)))
-            line += 1
-
-    # Boolean variable for a line break.
-    break_line = True
 
     # Checking if the measurement operators are projective.
+    projective = np.empty((n, out))
+    errors = np.zeros((n, out))
     for i in range(0, n):
         for j in range(0, out):
-            if nalg.norm(M[i][j] @ M[i][j] - M[i][j]) > BOUND:
-                if break_line:
-                    print("")
-                    break_line = False
-                flag = False
-                print(
-                    "Measurement operator M["
-                    + str(i)
-                    + "]["
-                    + str(j)
-                    + "] is not projective!"
-                )
 
-    # Checking if the measurements are constructed out of Mutually Unbiased Bases.
+            errors[i][j] = nalg.norm(M[i][j] @ M[i][j] - M[i][j])
+
+            if errors[i][j] > BOUND:
+                projective[i][j] = False
+                flag = False
+            else:
+                projective[i][j] = True
+
+    # The dictionary 'projectiveness' is returned. It contains the information on whether some mea-
+    # surement operator is projective or not and a measure, which is simply the Frobenius norm of
+    # Mˆ2 - M.
+    projectiveness = {"projective": projective, "errors": errors}
+
+    # Checking if the measurements are constructed out of Mutually Unbiased Bases. The dicitonary
+    # MUB_check is returned cointaing the desired information. If flag is False, MUB_check is an
+    # empty variable.
     if flag:
+        MUB_check = {}
         for i in range(0, n):
             for j in range(i + 1, n):
-                status = check_if_MUBs(M[i], M[j], out)
-                if status["boolean"]:
-                    print(
-                        "M["
-                        + str(i)
-                        + "] and M["
-                        + str(j)
-                        + "] are mutually unbiased. The "
-                        "maximum norm difference is "
-                        + str(status["max error"].round(8))
-                        + "."
-                    )
-                else:
-                    print(
-                        "M["
-                        + str(i)
-                        + "] and M["
-                        + str(j)
-                        + "] are not mutually unbiased. "
-                        "The maximum norm difference is "
-                        + str(status["max error"].round(8))
-                        + "."
-                    )
+                MUB_check[(i, j)] = check_if_MUBs(M[i], M[j], out)
+    else:
+        MUB_check = None
+
+    return rank, projectiveness, MUB_check
 
 
 def check_if_MUBs(P, Q, out, mub_bound = MUB_BOUND):
@@ -827,6 +1014,10 @@ def generate_bias(n, out, bias, weight):
         assert 0 <= weight <= 1, "'weight' must range between 0 and 1."
 
     elif bias in valid_bias_types_mw:
+
+        assert isinstance(weight, (list, tuple)), (
+            "For YVEC and BVEC bias, 'weight' must be a list or a tuple"
+            )
 
         if bias == "YVEC":
 

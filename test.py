@@ -146,8 +146,11 @@ def test_qubit_qracs(seeds):
                         }
 
     for j in range(2, 5):
-        computed_value = ut.find_QRAC_value(j, 2, seeds, verbose = False)
-        printings(literature_value[j], computed_value, j, 2)
+
+        # find_QRAC_value returns a dictionary. Here, only the entry "optimal value" of this dic-
+        # tionary is interesting.
+        computation = ut.find_QRAC_value(j, 2, seeds, verbose = False)
+        printings(literature_value[j], computation["optimal value"], j, 2)
 
 
 def test_higher_dim_qracs(seeds):
@@ -181,8 +184,8 @@ def test_higher_dim_qracs(seeds):
 
     for j in range(3, 6):
 
-        computed_value = ut.find_QRAC_value(2, j, seeds, verbose = False)
-        printings(literature_value[j], computed_value, 2, j)
+        computation = ut.find_QRAC_value(2, j, seeds, verbose = False)
+        printings(literature_value[j], computation["optimal value"], 2, j)
 
 
 def test_YPARAM(seeds):
@@ -219,12 +222,12 @@ def test_YPARAM(seeds):
 
     for j in range(0, 3):
 
-        computed_value = ut.find_QRAC_value(2, 2, seeds,
+        computation = ut.find_QRAC_value(2, 2, seeds,
                                             verbose = False,
                                             bias = "YPARAM",
                                             weight = random_bias[j])
 
-        printings(expected_quantum_value[j], computed_value, weight = random_bias[j])
+        printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
 
 
 def test_BPARAM(seeds):
@@ -269,12 +272,13 @@ def test_BPARAM(seeds):
 
     for j in range(0, 4):
 
-        computed_value = ut.find_QRAC_value(2, 2, seeds,
+        computation = ut.find_QRAC_value(2, 2, seeds,
                                             verbose = False,
                                             bias = "BPARAM",
                                             weight = random_bias[j])
 
-        printings(expected_quantum_value[j], computed_value, weight = random_bias[j] )
+        printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
+
 
 def expected_BPARAM(weight):
 
