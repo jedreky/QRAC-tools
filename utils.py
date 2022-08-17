@@ -14,6 +14,7 @@ be accessed by the command `find_QRAC_value`."""
 
 import cvxpy as cp
 import numpy as np
+import scipy as sp
 
 import numpy.linalg as nalg
 
@@ -22,6 +23,8 @@ from scipy.linalg import sqrtm
 from itertools import product
 from termcolor import colored
 from time import process_time
+
+from time import time
 
 class colors:
     CYAN =  '\033[96m'
@@ -155,7 +158,7 @@ def find_opt_prep(M, d, n, m, bias):
         m represents the number of outcomes of each measurement.
     bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
-        The dictionary bias represents a order-(n+2) tensor enconding the bias in some given QRAC.
+        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
 
     Output
     ------
@@ -272,7 +275,7 @@ def find_opt_meas(opt_preps, d, n, m, bias):
         m represents the number of outcomes of each measurement.
     bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
-        The dictionary bias represents a order-(n+2) tensor enconding the bias in some given QRAC.
+        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
 
     Output
     ------
@@ -423,8 +426,7 @@ def find_QRAC_value(n: int,
         The number of outcomes for the measurements. If no value is attributed to m, then m =
         d.
     verbose: True or False. True by default. [optional]
-        If true, it activates the function `determine_meas_status` for details about the optimized
-        measurements.
+        If true, it activates the function `printings` that produces a report about the computation.
     prob_bound: a float. [optional]
         Convergence criterion for the variable prob_value. When the difference between prob_value
         and previous_prob_value is less than prob_bound, the algorithm interprets prob_value = previ
@@ -434,11 +436,11 @@ def find_QRAC_value(n: int,
         variable M.
     bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
-        The dictionary bias represents a order-(n+2) tensor enconding the bias in some given QRAC.
+        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
     weight: a float or a list of floats of size m.
-        The variable weight carries the weight (or weights) with which the QRAC is biased. If it
-        is a single float, it must be a positive number between 0 and 1. If it is a list of floats,
-        it must sum to 1.
+        The variable weight carries the weight (or weights) with which the QRAC is biased. If it is
+        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
+        must sum to 1.
         Note that, for the case in which the variable weight is a single float, this variable is
         symmetrical. That is, setting weight = 0.5 has the same effect as making bias = None.
 
@@ -454,6 +456,11 @@ def find_QRAC_value(n: int,
             The number of random seeds as the starting points of the see-saw algorithm.
         outcomes: an integer.
             The number of outcomes for the measurements.
+        bias: a string.
+            The kind of bias used in the QRAC. If bias = None, the QRAC is unbiased.
+        weight: a float or a tuple/list of floats.
+            The weight used in the bias. It can be a float in the case where bias is single-parame-
+            ter, or a tuple/list in the case where bias is multi-parameter.
         optimal value: a float.
             The optimal value computed for the nˆm --> 1 QRAC.
         optimal measurements: a list of lists whose elements are matrices of size d x d.
@@ -494,6 +501,8 @@ def find_QRAC_value(n: int,
     report["n"] = n
     report["outcomes"] = m
     report["dimension"] = d
+    report["bias"] = bias
+    report["weight"] = weight
 
     # Starting the entries "optimal_value" and "optimal measurement" as zeros.
     report["optimal value"] = 0
@@ -618,6 +627,11 @@ def printings(report):
             The number of random seeds as the starting points of the see-saw algorithm.
         outcomes: an integer.
             The number of outcomes for the measurements.
+        bias: a string.
+            The kind of bias used in the QRAC. If bias = None, the QRAC is unbiased.
+        weight: a float or a tuple/list of floats.
+            The weight used in the bias. It can be a float in the case where bias is single-parame-
+            ter, or a tuple/list in the case where bias is multi-parameter.
         optimal value: a float.
             The optimal value computed for the nˆm --> 1 QRAC.
         optimal measurements: a list of lists whose elements are matrices of size d x d.
@@ -688,6 +702,16 @@ def printings(report):
           colors.END +
           f"\n"
          )
+
+    if report["bias"] is not None:
+        print(f"Kind of bias: {report['bias']}\n" +
+              f"Weight: {round(report['weight'], 5)}"
+              if isinstance(report['weight'], (float, int))
+              else
+              f"Kind of bias: {report['bias']}\n" +
+              f"Weights: {report['weight']}"
+             )
+
     print(f"Optimal value for the "
           f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
           f" {report['optimal value'].round(10)}"
@@ -745,6 +769,7 @@ def printings(report):
                  )
 
     # Printing the footer of the report.
+    print(" ")
     print(f"-" * 30 +
           f" End of computation " +
           f"-" * 30
@@ -922,7 +947,7 @@ def generate_bias(n, m, bias, weight):
     i = ((x_1, x_2, x_3, ... , x_n), y, b)
 
     where x_1, x_2, x_3, ... , x_n and b range from 0 to m - 1 and y ranges from 0 to n - 1. The
-    object bias tensor[i] represents a order-(n+2) tensor enconding the bias in some given QRAC.
+    object bias tensor[i] represents a order-(n+2) tensor encoding the bias in some given QRAC.
 
     If bias = None, the QRAC is unbiased and all of the n * m ** n elements in bias_tensor are
     uniform. The elements of bias_tensor are strictly bigger than zero whenever i[2] == i[0][i[1]].
@@ -987,7 +1012,7 @@ def generate_bias(n, m, bias, weight):
     ------
     bias_tensor: a dictionary of size n * m ** n. bias_tensor.keys() are tuples of n + 2 coordina-
     tes. bias_tensor.values() are floats.
-        bias_tensor represents a order-(n+2) tensor enconding the bias in some given QRAC.
+        bias_tensor represents a order-(n+2) tensor encoding the bias in some given QRAC.
     """
 
     # This first part of the funtion is just for assertions.
@@ -1120,3 +1145,171 @@ def generate_bias(n, m, bias, weight):
             bias_tensor[i] = 0
 
     return bias_tensor
+
+
+def find_classical_value(n: int,
+                         d: int,
+                         m: int = None,
+                         verbose = True,
+                         bias: str = None,
+                         weight = None
+                        ):
+
+    """
+    Find the Quantum Random Acces Code classical value
+    --------------------------------------------------
+
+    This function is the classical analogous of `find_QRAC_value`. Unlike `find_QRAC_value`, this
+    function finds the optimal value of a RAC (Random Acess Code) by optimizing over all encoding
+    and decoding strategies.
+
+    In a RAC, one desires to encode n digits ranging from 0 to m - 1 in another digit ranging from 1
+    to d - 1. In total, there are d^(m^n) encoding strategies and m^(d*n) decoging strategies, so
+    this function scales double exponentially. It performs a simple maximization over all combina-
+    tions of encoding and decoding strategies.
+
+    Cases you can expect to compute in less than one hour, for tuples of (n, d, m):
+    (2, 2, 2), (2, 2, 3), (2, 2, 4), (2, 3, 2), (2, 3, 3), (2, 4, 2), (2, 5, 2), (2, 6, 2),
+    (2, 7, 2), (2, 8, 2), (3, 2, 2), (3, 3, 2), (3, 4, 2) and (4, 2, 2).
+
+    Cases (2, 4, 2), (2, 5, 2), (2, 6, 2), (2, 7, 2) are (2, 8, 2) equivalent and trivial (return 1
+    as the classical value).
+
+    Inputs
+    ------
+    n: an integer.
+        n represents the number of encoded digits.
+    d: an integer.
+        d represents the size of the message to be passed to Bob.
+    m: an integer. [optional]
+        m represents the size of the digits of Alice. If Alice has n digits, then these each of the-
+        se digits range from 0 to m - 1. By default, m = d.
+    verbose: True or False. True by default. [optional]
+        If true, it prints a small report cointaing the classical value if the proposed RAC. If fal-
+        se, it returns the classical value.
+    bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
+    s() are floats.
+        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given RAC.
+    weight: a float or a list of floats of size m.
+        The variable weight carries the weight (or weights) with which the RAC is biased. If it is a
+        single float, it must be a positive number between 0 and 1. If it is a list of floats, it
+        must sum to 1.
+        Note that, for the case in which the variable weight is a single float, this variable is
+        symmetrical. That is, setting weight = 0.5 has the same effect as making bias = None.
+
+    Outputs
+    -------
+    If verbose = True, it prints a small report containing the classical value for the given RAC. If
+    not, it returns
+
+    classical_probability: a float.
+        The classical value for the n^m --> 1 RAC.
+    """
+
+    if verbose:
+        # Printing header
+        print(f"\n" +
+              f"=" * 80 +
+              f"\n" +
+              f" " * 32 +
+              f"QRAC-tools v1.0\n" +
+              f"=" * 80 +
+              f"\n"
+             )
+
+    # If no value is attributed for the number of outcomes, then I set m = d.
+    if m is None:
+        m = d
+
+    # Enumerating all possible strategies. The first line represents all possible encodings while
+    # the second line represents all possible decodings.
+    strategies = product(
+                         product(range(d), repeat = m ** n),
+                         product(range(m), repeat = d * n)
+                        )
+
+    # The variable iterable is an auxiliary variable. It will be transformed into the list `indexes`
+    # after.
+    iterable = product(product(range(m), repeat = n), range(n))
+    indexes = []
+
+    # The variable iterable if equivalent to the tuples in `generate_bias`, except that it does not
+    # contain an entry for b. This loop converts the tuple (x_1, x_2, ..., x_n) into a decimal num-
+    # ber and saves in the last entry of `indexes`.
+    for i in iterable:
+        decimal = 0
+        N = n - 1
+        for j in i[0]:
+            decimal += j * m ** N
+            N -= 1
+        indexes.append((i, decimal))
+    indexes = [((a), b, c) for ((a), b), c in indexes]
+
+    bias_tensor = generate_bias(n, m, bias, weight)
+
+    # Starting the algorithm by creating a initializing the empty list of classical_probability.
+    classical_probability = []
+    start = time()
+
+    for i in strategies:
+
+        strategy_prob = 0
+        for j in indexes:
+
+            # Selecting what messaging digit will be send to Bob.
+            message = i[0][j[2]]
+
+            # Based on the received digit, Bob produces output b.
+            b = i[1][message * n + j[1]]
+
+            # This is simply the RAC condition.
+            if b == j[0][j[1]]:
+
+                # This is a deterministic strategy. If the RAC condition is satisfied, then probabi-
+                # lity == 1 * bias_tensor.
+                strategy_prob += bias_tensor[(j[0], j[1], b)]
+
+        classical_probability.append(strategy_prob)
+
+    total_time = time() - start
+
+    # Optimizing over all strategies
+    classical_probability = max(classical_probability)
+
+    # Printing the report
+    if verbose:
+
+        print(colors.BOLD + colors.FAINT +
+              f"-" * 28 +
+              f" Summary of computation " +
+              f"-" * 28 +
+              colors.END +
+              f"\n"
+             )
+
+        print(f"Total time of computation: {round(total_time, 5)} s")
+
+        if bias is not None:
+            print(f"Kind of bias: {bias}\n" +
+                  f"Weight: {round(weight, 5)}"
+                  if isinstance(weight, (float, int))
+                  else
+                  f"Kind of bias: {bias}\n" +
+                  f"Weights: {weight}"
+                 )
+
+        superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+        print(f"Optimal value for the "
+              f"{n}{str(m).translate(superscript)}-->1 RAC:"
+              f" {round(classical_probability, 10)}"
+              f"\n"
+             )
+
+        # Printing the footer of the report.
+        print(f"-" * 30 +
+              f" End of computation " +
+              f"-" * 30
+             )
+
+    else:
+        return classical_probability

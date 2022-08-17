@@ -59,10 +59,10 @@ For the second part of the report, the quantum value for the average success pro
 According to Ref. [2], if $P_i$ and $Q_j$ are two rank-one projective measurement operators of two distinct $d$-outcome measurements, then if
 
 $$
-d P_i Q_j P_i = P_i \quad \text{and} \quad d Q_j P_i Q_j = Q_j, \quad \forall P_i, Q_j,
+d\, P_i Q_j P_i = P_i \quad \text{and} \quad d\, Q_j P_i Q_j = Q_j, \quad \forall P_i, Q_j,
 $$
 
-the two measurements can be constructed out of a pair of Mutually Unbiased Basis. In this case, the number in the second column of "Mutually unbiasedness of measurements" represents the largest Frobenius norm of the operators $d P_i Q_j P_i - P_i$ and $d Q_j P_i Q_j - Q_j$, for all $i$ and $j$.
+the two measurements can be constructed out of a pair of Mutually Unbiased Basis. In this case, the number in the second column of "Mutually unbiasedness of measurements" represents the largest Frobenius norm of the operators $d\, P_i Q_j P_i - P_i$ and $d\, Q_j P_i Q_j - Q_j$, for all $i$ and $j$.
 
 2. *Increasing the dimension of the quantum system*. In the `find_QRAC_value` procedure, the user is also allowed to specify different values for the dimension of the quantum system and the size of Alice's alphabet. Usually, in a QRAC, these values are the same. So if we are dealing with qubits, we assume that Alice is encoding bits. However, it does not need to be so. Let us say that one desires to encode 2 bits into a qutrit, for instance. In this case, we are still dealing with the $2^2 \rightarrow 1$ QRAC, but we are "cheating" in a certain way, because we are allowing the quantum system to be bigger in dimension. The quantum value of the average success probability for this example can be retrieved by evoking
 
@@ -199,7 +199,7 @@ The packages mentioned above can be installed by running:
 pip install -r requirements.txt
 ```
 
-## Reference
+## References
 
 1. A. Ambainis, D. Leung, L. Mancinska and M. Ozols, Quantum Random Access Codes with Shared Randomness, available in [arXiv:0810.2937](https://arxiv.org/abs/0810.2937).
 
