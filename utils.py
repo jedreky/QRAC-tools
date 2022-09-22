@@ -32,11 +32,21 @@ class colors:
     FAINT = '\033[2m'
     END =   '\033[0m'
 
-# Bound for checkings
-BOUND = 1e-7
+# Thresholds for the optimization problem. The problem value converges very fast, so we can allow
+# the code to run until the difference between two consecutive iterations of the see-saw algorithm
+# for the objetive function is as low as PROB_BOUND. However, for the variables of the problem, such
+# accuracy is not possible, so we keep MEAS_BOUND smaller than PROB_BOUND.
 PROB_BOUND = 1e-9
 MEAS_BOUND = 5e-7
+
+# These bounds are used for checking the projectivity, rankness, etc, of measurement operators. For
+# instance, our analytical resuts allows us to say that if an eigeinvalue of some measurement opera-
+# tor is lower than BOUND, than we can consider it is as being zero.
+BOUND = 5e-5
 MUB_BOUND = 1e-5
+
+# Maximal number of iterations for the optimization problem.
+ITERATIONS = 100
 
 
 def generate_random_measurements(d, m):
@@ -409,7 +419,7 @@ def find_QRAC_value(n: int,
         4. Check if the variables prob_value and M are converging. If not, return to step 2 till the
         difference between previous_prob_value and prob_value is smaller than prob_bound. Also, the
         loop should terminate either when max_norm_difference is smaller than meas_bound or when the
-        number of iterations is bigger than the variable iterations.
+        number of iterations is bigger than the constant ITERATIONS.
 
     This function also checks if the obtained optimal measurements are MUBs by activating determine_
     meas_status function.
@@ -508,9 +518,6 @@ def find_QRAC_value(n: int,
     report["optimal value"] = 0
     report["optimal measurements"] = 0
 
-    # Maximum number of iterations for the see-saw loop.
-    iterations = 100
-
     # Here I am generating the bias and saving it in the tensor bias_tensor. By default, the QRAC
     # is unbiased, so the bias = None.
     bias_tensor = generate_bias(n, m, bias, weight)
@@ -553,10 +560,9 @@ def find_QRAC_value(n: int,
 
         # The variable prob_value converges faster than M, so that the stopping condition for prob_
         # value can be smaller. For the measurements, we either stop when max_norm_difference is
-        # smaller than meas_bound or when the number of iterations is bigger than the variable ite-
-        # rations.
+        # smaller than meas_bound or when the number of iterations is bigger than ITERATIONS.
         while (abs(previous_prob_value - prob_value) > prob_bound) or (
-            max_norm_difference > meas_bound and iter_count < iterations
+            max_norm_difference > meas_bound and iter_count < ITERATIONS
         ):
 
             previous_prob_value = prob_value
@@ -576,7 +582,7 @@ def find_QRAC_value(n: int,
 
         # Saving the information on whether, for a given seed, there was convergence of measurements
         # or not.
-        if iter_count < iterations:
+        if iter_count < ITERATIONS:
             seed_convergence.append(i + 1)
 
         # Selecting the largest problem value from all distinct random seeds.
@@ -754,6 +760,7 @@ def printings(report):
     if report["MUB check"] is not None:
         keys = list(report["MUB check"].keys())
 
+        print(" ")
         print(colors.CYAN +
               f"Mutually unbiasedness of measurements" +
               colors.END
@@ -1072,66 +1079,58 @@ def generate_bias(n, m, bias, weight):
 
             elif bias == "XDIAG":
 
-                # This is a normalization constant for the XDIAG case. It ensures that sum(bias_
-                # tensor.values()) == 1.
-                norm = (2 * weight - 1) / (m ** (n - 1)) - weight + 1
-
                 # If i[0] is a diagonal element, then it is prefered with `weight`. If not, it
                 # is prefered with 1 - weight. The other cases follow similarly.
                 if len(set(i[0])) == 1:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
+
+                    # The constants multiplying and dividing bias_tensor[i] are an effect of the re-
+                    # normalization due to the introduction of bias.
+                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i] / m
                 else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    bias_tensor[i] = (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - m)
 
             elif bias == "XCHESS":
 
-                # Here the normalization depends on the parity of m ** n. Recall that parity(o
-                # ut) == parity(m ** n), for positive n and m.
+                # Here the normalization depends on the parity of m ** n. Recall that parity(m) ==
+                # parity(m ** n), for positive n and m.
                 if m % 2 == 0:
-                    norm = 0.5
+                    if sum(i[0]) % 2 == 1:
+                        bias_tensor[i] = 2 * weight * bias_tensor[i]
+                    else:
+                        bias_tensor[i] = 2 * (1 - weight) * bias_tensor[i]
                 else:
-                    norm = (1 + (n - 2 * n * weight) / (n * m ** n)) / 2
-
-                if sum(i[0]) % 2 == 1:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
-                else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    if sum(i[0]) % 2 == 1:
+                        bias_tensor[i] = 2 * (m ** n) * weight * bias_tensor[i] / (m ** n - 1)
+                    else:
+                        bias_tensor[i] = 2 * (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n + 1)
 
             elif bias == "XPARAM":
 
-                norm = 1 - weight - (n - 2 * n * weight) / (n * m ** n)
-
                 if i[0] == (0,) * n:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i]
                 else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    bias_tensor[i] = (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - 1)
 
             elif bias == "XPLANE":
 
-                norm = (weight + (1 - weight) * (m - 1)) / m
-
                 if i[0][0] == 0:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                    bias_tensor[i] = m * weight * bias_tensor[i]
                 else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    bias_tensor[i] = m * (1 - weight) * bias_tensor[i] / (m - 1)
 
             elif bias == "YPARAM":
 
-                norm = 1 - weight - 1 / n + (2 * weight) / n
-
                 if i[1] == 0:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                    bias_tensor[i] = n * weight * bias_tensor[i]
                 else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    bias_tensor[i] = n * (1 - weight) * bias_tensor[i] / (n - 1)
 
             elif bias == "BPARAM":
 
-                norm = 1 - weight - 1 / m + (2 * weight) / m
-
                 if i[2] == 0:
-                    bias_tensor[i] = weight * bias_tensor[i] / norm
+                    bias_tensor[i] = m * weight * bias_tensor[i]
                 else:
-                    bias_tensor[i] = (1 - weight) * bias_tensor[i] / norm
+                    bias_tensor[i] = m * (1 - weight) * bias_tensor[i] / (m - 1)
 
             elif bias == "YVEC":
 
