@@ -15,53 +15,58 @@ be accessed by the command `find_QRAC_value`."""
 import cvxpy as cp
 import numpy as np
 import scipy as sp
+import time as tp
 
 import numpy.linalg as nalg
 
 from numpy.random import rand
 from scipy.linalg import sqrtm
+from scipy.stats import unitary_group
 from itertools import product
-from termcolor import colored
-from time import process_time
 
-from time import time
 
 class colors:
-    CYAN =  '\033[96m'
-    BOLD =  '\033[1m'
-    FAINT = '\033[2m'
-    END =   '\033[0m'
+    CYAN = "\033[96m"
+    BOLD = "\033[1m"
+    FAINT = "\033[2m"
+    END = "\033[0m"
 
-# Thresholds for the optimization problem. The problem value converges very fast, so we can allow
-# the code to run until the difference between two consecutive iterations of the see-saw algorithm
-# for the objetive function is as low as PROB_BOUND. However, for the variables of the problem, such
-# accuracy is not possible, so we keep MEAS_BOUND smaller than PROB_BOUND.
+
+# Thresholds for the optimization problem. The problem value converges much faster than the varia-
+# bles, so we can allow a tighter tolerance for the problem value as low as PROB_BOUND.
 PROB_BOUND = 1e-9
-MEAS_BOUND = 5e-7
 
-# These bounds are used for checking the projectivity, rankness, etc, of measurement operators. For
-# instance, our analytical resuts allows us to say that if an eigeinvalue of some measurement opera-
-# tor is lower than BOUND, than we can consider it is as being zero.
-BOUND = 5e-5
-MUB_BOUND = 1e-5
+# BOUND is used as tolerance to check the projectivity, rankness, etc, of measurement operators. It
+# is also used as the default value for the convergence criterion in meas_bound.
+BOUND = 1e-7
+
+# MUB_BOUND is used in the function check_if_MUBs. This function is less accurate than the other
+# checks. Our analycal results allow us to trust in a higher tolerance for this particular check.
+MUB_BOUND = 5e-6
+
+# This is the solver's maximaum accuracy. By default, it must be lower than PROB_BOUND and BOUND.
+# Decreasing this number might compromise the feasibility of the problems.
+MOSEK_ACCURACY = 1e-13
 
 # Maximal number of iterations for the optimization problem.
 ITERATIONS = 100
 
 
-def generate_random_measurements(d, m):
+def generate_random_measurements(n, d, m):
 
     """
     Generate random measurements
     ----------------------------
 
-    This function generates a random measurement with m outcomes and dimension d. The first step is
+    This function generates n random measurements with m outcomes and dimension d. The first step is
     to generate m random complex operators named random_op. Then, it transforms these operators into
     a positive semidefinite matrix and stores them in the list partial_meas. By rescaling partial_
     sum using the sum of all random_herm operators, it can produce a random measurement.
 
     Input
     -----
+    n: an integer.
+        n represents the number of distinct measurements.
     d: an integer
         The dimension of the measurement operators.
     m: an integer
@@ -69,80 +74,91 @@ def generate_random_measurements(d, m):
 
     Output
     ------
-    measurement: a list of m matrices of size d x d.
-        The variable measurement represent a random measurement with m outcomes and dimension d.
+    M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
+        M represents a list with n d-dimensional random measurements with m outcomes.
     """
 
-    # Trying to generate the measurement for 10 times. If, in a certain iteration, a suitable measu-
-    # rement is not produced, the code skips the iteration in the "CHECKING" points.
-    attempts = 0
-    while attempts < 10:
-        attempts += 1
+    # Initializing an empty list of measurements.
+    measurements_list = []
+    for i in range(0, n):
 
-        # Initializing an empty list.
-        partial_meas = []
-
-        # Creating d random complex operators and appending them to the list partial_meas.
-        for i in range(0, m):
-
-            # Generating random complex operators. Each entry should have both the real and imagina-
-            # ry parts between [-1, +1].
-            random_op = (
-                2 * rand(d, d)
-                - np.ones((d, d))
-                + 1j * (2 * rand(d, d) - np.ones((d, d)))
-            )
-
-            # Transforming random_op into a hermitian operator. Note that random_herm is also po-
-            # sitive semidefinite by construction.
-            random_herm = random_op.T.conj() @ random_op
-
-            partial_meas.append(random_herm)
-
-        partial_sum = np.sum(partial_meas, axis = 0)
-
-        # CHECKING if partial_sum is full-rank
-        full_rank = nalg.matrix_rank(partial_sum, tol = BOUND, hermitian = True) == d
-
-        if full_rank:
+        # Trying to generate one measurement for 10 times. If, in a certain iteration, a suitable
+        # measurement is not produced, the code skips the iteration in the "CHECKING" points.
+        attempts = 0
+        while attempts < 10:
+            attempts += 1
 
             # Initializing an empty list.
-            measurement = []
+            partial_meas = []
 
-            # This is the operator I will use to rescale the partial_meas list. It is only the in-
-            # verse square root of partial_sum.
-            inv_sqrt = nalg.inv(sqrtm(partial_sum))
+            # Creating d random complex operators and appending them to the list partial_meas.
+            for j in range(0, m):
 
-            # Generating the random measurement operators and appending to the list measurement.
-            error = False
-            for i in range(0, m):
+                # Generating random complex operators. Each entry should have both the real and ima-
+                # ginary parts between [-1, +1].
+                random_op = (
+                    2 * rand(d, d)
+                    - np.ones((d, d))
+                    + 1j * (2 * rand(d, d) - np.ones((d, d)))
+                )
 
-                # Rescaling partial_meas[i]
-                M = inv_sqrt @ partial_meas[i] @ inv_sqrt
-                # Enforcing hermiticity
-                M = 0.5 * (M + M.conj().T)
+                # Transforming random_op into a hermitian operator. Note that random_herm is also
+                # positive semidefinite by construction.
+                random_herm = random_op.T.conj() @ random_op
 
-                measurement.append(M)
+                partial_meas.append(random_herm)
 
-                # CHECKING if M is positive semidefinite. Recall that eigh produces ordered eigenva-
-                # lues. It suffices to check if the first eigenvalue is non-negative. If it is not
-                # the case, the boolean variable error is changed to True and another iteration of
-                # the while loop will start.
-                eigval, eigvet = nalg.eigh(M)
+            partial_sum = np.sum(partial_meas, axis=0)
 
-                if eigval[0] < -BOUND:
-                    error = True
+            # CHECKING if partial_sum is full-rank
+            full_rank = nalg.matrix_rank(partial_sum, tol=BOUND, hermitian=True) == d
 
-            if not error:
+            if full_rank:
 
-                # Last check. CHECKING if the measurement operators sum to identity
-                sum = np.sum(measurement, axis = 0)
-                sum_to_identity = nalg.norm(sum - np.eye(d)) < BOUND
+                # Initializing an empty list.
+                measurement = []
 
-                if sum_to_identity:
-                    return measurement
+                # This is the operator I will use to rescale the partial_meas list. It is only the
+                # inverse square root of partial_sum.
+                inv_sqrt = nalg.inv(sqrtm(partial_sum))
 
-    raise RuntimeError("a random measurement cannot be generated")
+                # Generating the random measurement operators and appending to the list measurement.
+                error = False
+                for j in range(0, m):
+
+                    # Rescaling partial_meas[i]
+                    M = inv_sqrt @ partial_meas[j] @ inv_sqrt
+                    # Enforcing hermiticity
+                    M = 0.5 * (M + M.conj().T)
+
+                    measurement.append(M)
+
+                    # CHECKING if M is positive semidefinite. Recall that eigh produces ordered eige
+                    # nvalues. It suffices to check if the first eigenvalue is non-negative. If it
+                    # is not the case, the boolean variable error is changed to True and another ite
+                    # ration of the while loop will start.
+                    eigval, eigvet = nalg.eigh(M)
+
+                    if eigval[0] < -BOUND:
+                        error = True
+
+                if not error:
+
+                    # Last check. CHECKING if the measurement operators sum to identity
+                    sum = np.sum(measurement, axis=0)
+                    sum_to_identity = nalg.norm(sum - np.eye(d)) < BOUND
+
+                    # If the last check is satisfied, then `measurement` is finally appended to M.
+                    if sum_to_identity:
+                        measurements_list.append(measurement)
+                        break
+
+        # The execution is finished in the case where this function cannot produce a suitable measu-
+        # rement.
+        if attempts == 10:
+            raise RuntimeError("a random measurement cannot be generated")
+
+    return measurements_list
 
 
 def find_opt_prep(M, d, n, m, bias):
@@ -195,7 +211,7 @@ def find_opt_prep(M, d, n, m, bias):
 
     # The variable indexes_of_x list all the possible tuples of size n with elements ranging from
     # 0 to m - 1.
-    indexes_of_x = product(range(0, m), repeat = n)
+    indexes_of_x = product(range(0, m), repeat=n)
 
     # This for runs over all n-tuples of indexes_of_x. In practice, it is a for nested n times.
     for i in indexes_of_x:
@@ -247,7 +263,7 @@ def opt_state(operators_list, d):
 
     # The "average success probability" is defined as simply the sum of the elements in operators_
     # list.
-    sum = np.sum(operators_list, axis = 0)
+    sum = np.sum(operators_list, axis=0)
 
     # numpy.eigh provides the eigenvalues and eigenvectors ordered from the smallest to the largest.
     eigval, eigvet = nalg.eigh(sum)
@@ -258,7 +274,7 @@ def opt_state(operators_list, d):
     return rho
 
 
-def find_opt_meas(opt_preps, d, n, m, bias):
+def find_opt_meas(opt_preps, d, n, m, bias, mosek_accuracy):
 
     """
     Find optimal measurements
@@ -286,6 +302,9 @@ def find_opt_meas(opt_preps, d, n, m, bias):
     bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
         The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
+    mosek_accuracy: a float.
+        Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
+        MOSEK. Here it is used for the primal and the dual problem.
 
     Output
     ------
@@ -309,24 +328,24 @@ def find_opt_meas(opt_preps, d, n, m, bias):
 
         for k in range(0, m):
 
-            indexes = product(range(0, m), repeat = n)
+            indexes = product(range(0, m), repeat=n)
 
             # Summing through all indexes of the variable "indexes". This sum is weighted by the
             # correct bias element, bias[(i, j, k)].
-            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes], axis = 0)
+            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes], axis=0)
 
             # Appending m sums to opt_preps_sum
             opt_preps_sum.append(sum)
 
         # Solving the problem for the j-th measurement
-        prob_value, meas_value = opt_meas(opt_preps_sum, d, n, m)
+        prob_value, meas_value = opt_meas(opt_preps_sum, d, n, m, mosek_accuracy)
         prob_sum += prob_value
         M.append(meas_value)
 
     return prob_sum, M
 
 
-def opt_meas(opt_preps_sum, d, n, m):
+def opt_meas(opt_preps_sum, d, n, m, mosek_accuracy):
 
     """
     Optimal measurement
@@ -349,6 +368,10 @@ def opt_meas(opt_preps_sum, d, n, m):
         multiplying prob_guess.
     m: an integer.
         m represents the number of outcomes of the measurements.
+    mosek_accuracy: a float.
+        Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
+        MOSEK. Here it is used for the primal and the dual problem.
+
 
     Outputs
     -------
@@ -363,7 +386,7 @@ def opt_meas(opt_preps_sum, d, n, m):
 
     # Appending the variables to the list:
     for i in range(0, m):
-        M_vars.append(cp.Variable((d, d), hermitian = True))
+        M_vars.append(cp.Variable((d, d), hermitian=True))
 
     # Defining objective function:
     prob_guess = 0
@@ -378,12 +401,45 @@ def opt_meas(opt_preps_sum, d, n, m):
         constr.append(M_vars[i] >> 0)
 
     # The elements of M_vars must sum to identity.
-    sum = cp.sum(M_vars, axis = 0)
+    sum = cp.sum(M_vars, axis=0)
     constr.append(sum == np.eye(d))
 
-    # Defining the SDP and solving. CVXPY cannot recognize the objective function is real.
+    # Defining the SDP and solving. CVXPY cannot recognize that the objective function is real.
     prob = cp.Problem(cp.Maximize(cp.real(prob_guess)), constr)
-    prob.solve(solver = "MOSEK")
+
+    # Sometimes MOSEK cannot solve a problem with high accuracy. However, if the seed is changed, a
+    # solution is possible for some cases. So here we apply a random unitary to the preparations,
+    # which is equivalent to producing new seeds. If the problem still remains unfeasilble, we raise
+    # an error.
+    attempts = 0
+    while attempts < 20 and prob.value is None:
+        attempts += 1
+        try:
+            prob.solve(
+                solver="MOSEK",
+                mosek_params={
+                    "MSK_DPAR_INTPNT_CO_TOL_PFEAS": mosek_accuracy,
+                    "MSK_DPAR_INTPNT_CO_TOL_DFEAS": mosek_accuracy,
+                },
+            )
+        except Exception:
+
+            # Generating a d-dimensional random unitary with scipy.stats.unitary_group.
+            rdm_U = unitary_group.rvs(d)
+            prob_guess = 0
+
+            for i in range(0, m):
+                prob_guess += cp.trace(
+                    M_vars[i] @ (rdm_U @ opt_preps_sum[i] @ rdm_U.conj().T)
+                )
+
+            # Reformulating the problem
+            prob = cp.Problem(cp.Maximize(cp.real(prob_guess)), constr)
+
+            pass
+
+    if prob.value is None:
+        raise RuntimeError("Solver 'MOSEK' failed. Try to reduce 'MOSEK' accuracy.")
 
     # Updating M_vars by its optimal value.
     for i in range(0, m):
@@ -391,19 +447,22 @@ def opt_meas(opt_preps_sum, d, n, m):
 
     return prob.value, M_vars
 
+
 # ==================================================================================================
 # ---------------------------------------------- MAIN ----------------------------------------------
 # ==================================================================================================
-def find_QRAC_value(n: int,
-                    d: int,
-                    seeds: int,
-                    m: int = None,
-                    verbose: bool = True,
-                    prob_bound: float = PROB_BOUND,
-                    meas_bound: float = MEAS_BOUND,
-                    bias: str = None,
-                    weight = None
-                   ):
+def find_QRAC_value(
+    n: int,
+    d: int,
+    seeds: int,
+    m: int = None,
+    verbose: bool = True,
+    prob_bound: float = PROB_BOUND,
+    meas_bound: float = BOUND,
+    mosek_accuracy: float = MOSEK_ACCURACY,
+    bias: str = None,
+    weight=None,
+):
     """
     Find the Quantum Random Acces Code quantum value
     ------------------------------------------------
@@ -444,6 +503,9 @@ def find_QRAC_value(n: int,
     meas_bound: a float. [optional]
         The same criterion as in prob_bound but for the norms of the measurement operators in the
         variable M.
+    mosek_accuracy: a float. [optional]
+        Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
+        MOSEK. Here it is used for the primal and the dual problem.
     bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
     s() are floats.
         The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
@@ -523,7 +585,7 @@ def find_QRAC_value(n: int,
     bias_tensor = generate_bias(n, m, bias, weight)
 
     # List of times, and number of iterations for each seed. Also seed_convergence stores the infor-
-    # mation of whether the measurements of a given seed have converged below MEAS_BOUND. These
+    # mation of whether the measurements of a given seed have converged below meas_bound. These
     # lists will contain information to be printed in the final report.
     times_list = []
     iterations_list = []
@@ -532,28 +594,17 @@ def find_QRAC_value(n: int,
     for i in range(0, seeds):
 
         # Marking the start of the time count.
-        start_time = process_time()
+        start_time = tp.process_time()
 
-        M = []
-        for j in range(0, n):
-
-            # The code is finished in the case where `generate_random_measurements` cannot produce a
-            # suitable measurement. See `generate_random_measurements` for details.
-            random_measurement = generate_random_measurements(d, m)
-            assert np.shape(random_measurement) == (
-                m,
-                d,
-                d,
-            ), "Encountered measurement object of unexpected shape."
-            M.append(random_measurement)
+        # Generating a list of n random measurements.
+        M = generate_random_measurements(n, d, m)
 
         # Defining the stopping conditions. The previous_M variable is started as the "null" measu-
         # rement, so to speak. It is just a dummy initialization.
         previous_prob_value = 0
         prob_value = 1
         previous_M = [
-            [np.zeros((d, d), dtype=float) for i in range(0, m)]
-            for j in range(0, n)
+            [np.zeros((d, d), dtype=float) for i in range(0, m)] for j in range(0, n)
         ]
         max_norm_difference = 1
         iter_count = 0
@@ -569,7 +620,9 @@ def find_QRAC_value(n: int,
 
             # The two lines below correspond to two a single round of see-saw.
             opt_preps = find_opt_prep(M, d, n, m, bias_tensor)
-            prob_value, M = find_opt_meas(opt_preps, d, n, m, bias_tensor)
+            prob_value, M = find_opt_meas(
+                opt_preps, d, n, m, bias_tensor, mosek_accuracy
+            )
 
             norm_difference = []
             for a in range(0, n):
@@ -592,7 +645,7 @@ def find_QRAC_value(n: int,
             report["best seed number"] = i + 1
 
         # Just append the information of the computation time and the number of iterations.
-        times_list.append(process_time() - start_time)
+        times_list.append(tp.process_time() - start_time)
         iterations_list.append(iter_count)
 
     # Saving data in the dictionary report to be printed at the ending of the computation.
@@ -600,9 +653,11 @@ def find_QRAC_value(n: int,
     report["average time"] = sum(times_list) / seeds
     report["average iterations"] = sum(iterations_list) / seeds
 
-    report["rank"], report["projectiveness"], report["MUB check"]= (
-        determine_meas_status(report["optimal measurements"], d, n, m)
-                                               )
+    (
+        report["rank"],
+        report["projectiveness"],
+        report["MUB check"],
+    ) = determine_meas_status(report["optimal measurements"], d, n, m)
     # verbose is True by default. If True, it prints a report of the computation. If False, it re-
     # turns the dictionary report.
     if verbose:
@@ -670,117 +725,103 @@ def printings(report):
     superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 
     # Printing header
-    print(f"\n" +
-          f"=" * 80 +
-          f"\n" +
-          f" " * 32 +
-          f"QRAC-tools v1.0\n" +
-          f"=" * 80 +
-          f"\n"
-         )
+    print(
+        f"\n" + f"=" * 80 + f"\n" + f" " * 32 + f"QRAC-tools v1.0\n" + f"=" * 80 + f"\n"
+    )
 
     # Printing the first part of the report
-    print(colors.BOLD + colors.FAINT +
-          f"-" * 28 +
-          f" Summary of computation " +
-          f"-" * 28 +
-          colors.END +
-          f"\n"
-         )
+    print(
+        colors.BOLD
+        + colors.FAINT
+        + f"-" * 28
+        + f" Summary of computation "
+        + f"-" * 28
+        + colors.END
+        + f"\n"
+    )
 
-    if report['seed convergence'] == []:
-        report['seed convergence'].append(None)
+    if report["seed convergence"] == []:
+        report["seed convergence"].append(None)
 
-    print(f"Number of random seeds: {report['seeds']}\n"
-          f"Best seed: {report['best seed number']} \n"
-          f"Seeds whose measurements converged below MEAS_BOUND: "
-          f"{', '.join(str(i) for i in report['seed convergence'])}\n"
-          f"Average time until convergence: {round(report['average time'], 5)} s\n"
-          f"Average number of iterations until convergence: "
-          f"{round(report['average iterations'])}\n"
-         )
+    print(
+        f"Number of random seeds: {report['seeds']}\n"
+        f"Best seed: {report['best seed number']} \n"
+        f"Seeds whose measurements converged below meas_bound: "
+        f"{', '.join(str(i) for i in report['seed convergence'])}\n"
+        f"Average time until convergence: {round(report['average time'], 5)} s\n"
+        f"Average number of iterations until convergence: "
+        f"{round(report['average iterations'])}\n"
+    )
 
     # Printing the second part of the report. Analysis of the optimal realisation.
-    print(colors.BOLD + colors.FAINT +
-          f"-" * 21 +
-          f" Analysis of the optimal realisation " +
-          f"-" * 22 +
-          colors.END +
-          f"\n"
-         )
+    print(
+        colors.BOLD
+        + colors.FAINT
+        + f"-" * 21
+        + f" Analysis of the optimal realisation "
+        + f"-" * 22
+        + colors.END
+        + f"\n"
+    )
 
     if report["bias"] is not None:
-        print(f"Kind of bias: {report['bias']}\n" +
-              f"Weight: {round(report['weight'], 5)}"
-              if isinstance(report['weight'], (float, int))
-              else
-              f"Kind of bias: {report['bias']}\n" +
-              f"Weights: {report['weight']}"
-             )
+        print(
+            f"Kind of bias: {report['bias']}\n"
+            + f"Weight: {round(report['weight'], 5)}"
+            if isinstance(report["weight"], (float, int))
+            else f"Kind of bias: {report['bias']}\n" + f"Weights: {report['weight']}"
+        )
 
-    print(f"Optimal value for the "
-          f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
-          f" {report['optimal value'].round(10)}"
-          f"\n"
-         )
+    print(
+        f"Optimal value for the "
+        f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
+        f" {report['optimal value'].round(12)}"
+        f"\n"
+    )
 
     # Printing the ranks of the measurement operators.
-    print(colors.CYAN +
-          f"Measurement operator ranks" +
-          colors.END
-         )
+    print(colors.CYAN + f"Measurement operator ranks" + colors.END)
     line = 0
     for i in report["rank"]:
-        print(f"M[{str(line)}] ranks: ",
-              f"  ".join(map(str, i))
-             )
+        print(f"M[{str(line)}] ranks: ", f"  ".join(map(str, i)))
         line += 1
 
     print("")
 
     # Printing whether the measurement operators are projective or not.
-    print(colors.CYAN +
-          f"Measurement operator projectiveness" +
-          colors.END
-         )
+    print(colors.CYAN + f"Measurement operator projectiveness" + colors.END)
 
     projective = report["projectiveness"]["projective"]
     errors = report["projectiveness"]["errors"]
 
     for i in range(0, report["n"]):
         for j in range(0, report["outcomes"]):
-            print(f"M[{str(i)}, {str(j)}]:  Projective\t\t"
-                  f"{str(float('%.3g' % errors[i][j]))}"
-                  if projective[i][j]
-                  else
-                  f"M[{str(i)}, {str(j)}]:  Not projective\t"
-                  f"{str(float('%.3g' % errors[i][j]))}"
-                 )
+            print(
+                f"M[{str(i)}, {str(j)}]:  Projective\t\t"
+                f"{str(float('%.3g' % errors[i][j]))}"
+                if projective[i][j]
+                else f"M[{str(i)}, {str(j)}]:  Not projective\t"
+                f"{str(float('%.3g' % errors[i][j]))}"
+            )
 
     if report["MUB check"] is not None:
         keys = list(report["MUB check"].keys())
 
         print(" ")
-        print(colors.CYAN +
-              f"Mutually unbiasedness of measurements" +
-              colors.END
-             )
+        print(colors.CYAN + f"Mutually unbiasedness of measurements" + colors.END)
 
         for i in keys:
-            print(f"M[{str(i[0])}] and M[{str(i[1])}]:  MUM\t\t"
-                  f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
-                  if report['MUB check'][i]['boolean']
-                  else
-                  f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUM\t\t"
-                  f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
-                 )
+            print(
+                f"M[{str(i[0])}] and M[{str(i[1])}]:  MUM\t\t"
+                f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
+                if report["MUB check"][i]["boolean"]
+                else f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUM\t\t"
+                f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
+            )
 
     # Printing the footer of the report.
     print(" ")
-    print(f"-" * 30 +
-          f" End of computation " +
-          f"-" * 30
-         )
+    print(f"-" * 30 + f" End of computation " + f"-" * 30)
 
 
 def determine_meas_status(M, d, n, m):
@@ -844,12 +885,12 @@ def determine_meas_status(M, d, n, m):
 
     # Checking if the measurement operators sum to identity.
     for i in range(0, n):
-        sum = np.sum(M[i], axis = 0)
+        sum = np.sum(M[i], axis=0)
         if nalg.norm(sum - np.eye(d)) > BOUND:
             raise RuntimeError("measurement operators does not sum to identity")
 
     # This will return me an array with the ranks of all measurement operators.
-    rank = nalg.matrix_rank(M, tol = BOUND, hermitian = True)
+    rank = nalg.matrix_rank(M, tol=BOUND, hermitian=True)
     # Now checking if all of the measurement operators are rank-one.
     if not (rank == np.ones((n, m), dtype=np.int8)).all():
         flag = False
@@ -887,7 +928,7 @@ def determine_meas_status(M, d, n, m):
     return rank, projectiveness, MUB_check
 
 
-def check_if_MUBs(P, Q, m, mub_bound = MUB_BOUND):
+def check_if_MUBs(P, Q, m, mub_bound=MUB_BOUND):
 
     """
     Check if two measurements are mutually unbiased
@@ -1030,8 +1071,8 @@ def generate_bias(n, m, bias, weight):
 
     assert bias is None or bias in valid_bias_types_sw or bias in valid_bias_types_mw, (
         "Available options for bias are: "
-         "XDIAG, XCHESS, XPARAM, XPLANE, YPARAM, YVEC, BPARAM and BVEC."
-         )
+        "XDIAG, XCHESS, XPARAM, XPLANE, YPARAM, YVEC, BPARAM and BVEC."
+    )
 
     if bias is not None:
         assert weight is not None, "a value for `weight` must be provided"
@@ -1041,9 +1082,9 @@ def generate_bias(n, m, bias, weight):
 
     elif bias in valid_bias_types_mw:
 
-        assert isinstance(weight, (list, tuple)), (
-            "For YVEC and BVEC bias, `weight` must be a list or a tuple"
-            )
+        assert isinstance(
+            weight, (list, tuple)
+        ), "For YVEC and BVEC bias, `weight` must be a list or a tuple"
 
         if bias == "YVEC":
 
@@ -1062,7 +1103,7 @@ def generate_bias(n, m, bias, weight):
 
     # Creating an iterable for feeding bias_tensor. The keys of bias_tensor will be the tuples defi-
     # ned by the iterable indexes.
-    indexes = product(product(range(0, m), repeat = n), range(0, n), range(0, m))
+    indexes = product(product(range(0, m), repeat=n), range(0, n), range(0, m))
 
     for i in indexes:
 
@@ -1070,7 +1111,7 @@ def generate_bias(n, m, bias, weight):
         if i[2] == i[0][i[1]]:
 
             # The elements must be uniform. There n * m ** n elements in bias_tensor in total.
-            bias_tensor[i] = 1 / (n * m ** n)
+            bias_tensor[i] = 1 / (n * m**n)
 
             # Separating in cases. If bias = None, none of the below cases will match, and the re-
             # sulting bias_tensor will be unbiased.
@@ -1085,9 +1126,11 @@ def generate_bias(n, m, bias, weight):
 
                     # The constants multiplying and dividing bias_tensor[i] are an effect of the re-
                     # normalization due to the introduction of bias.
-                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i] / m
+                    bias_tensor[i] = (m**n) * weight * bias_tensor[i] / m
                 else:
-                    bias_tensor[i] = (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - m)
+                    bias_tensor[i] = (
+                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - m)
+                    )
 
             elif bias == "XCHESS":
 
@@ -1100,16 +1143,22 @@ def generate_bias(n, m, bias, weight):
                         bias_tensor[i] = 2 * (1 - weight) * bias_tensor[i]
                 else:
                     if sum(i[0]) % 2 == 1:
-                        bias_tensor[i] = 2 * (m ** n) * weight * bias_tensor[i] / (m ** n - 1)
+                        bias_tensor[i] = (
+                            2 * (m**n) * weight * bias_tensor[i] / (m**n - 1)
+                        )
                     else:
-                        bias_tensor[i] = 2 * (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n + 1)
+                        bias_tensor[i] = (
+                            2 * (m**n) * (1 - weight) * bias_tensor[i] / (m**n + 1)
+                        )
 
             elif bias == "XPARAM":
 
                 if i[0] == (0,) * n:
-                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i]
+                    bias_tensor[i] = (m**n) * weight * bias_tensor[i]
                 else:
-                    bias_tensor[i] = (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - 1)
+                    bias_tensor[i] = (
+                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - 1)
+                    )
 
             elif bias == "XPLANE":
 
@@ -1146,13 +1195,9 @@ def generate_bias(n, m, bias, weight):
     return bias_tensor
 
 
-def find_classical_value(n: int,
-                         d: int,
-                         m: int = None,
-                         verbose = True,
-                         bias: str = None,
-                         weight = None
-                        ):
+def find_classical_value(
+    n: int, d: int, m: int = None, verbose=True, bias: str = None, weight=None
+):
 
     """
     Find the Quantum Random Acces Code classical value
@@ -1162,8 +1207,8 @@ def find_classical_value(n: int,
     function finds the optimal value of a RAC (Random Acess Code) by optimizing over all encoding
     and decoding strategies.
 
-    In a RAC, one desires to encode n digits ranging from 0 to m - 1 in another digit ranging from 1
-    to d - 1. In total, there are d^(m^n) encoding strategies and m^(d*n) decoging strategies, so
+    In a RAC, one desires to encode n digits ranging from 0 to m - 1 in another digit ranging from 0
+    to d - 1. In total, there are d^(m^n) encoding strategies and m^(d*n) decoding strategies, so
     this function scales double exponentially. It performs a simple maximization over all combina-
     tions of encoding and decoding strategies.
 
@@ -1207,14 +1252,15 @@ def find_classical_value(n: int,
 
     if verbose:
         # Printing header
-        print(f"\n" +
-              f"=" * 80 +
-              f"\n" +
-              f" " * 32 +
-              f"QRAC-tools v1.0\n" +
-              f"=" * 80 +
-              f"\n"
-             )
+        print(
+            f"\n"
+            + f"=" * 80
+            + f"\n"
+            + f" " * 32
+            + f"QRAC-tools v1.0\n"
+            + f"=" * 80
+            + f"\n"
+        )
 
     # If no value is attributed for the number of outcomes, then I set m = d.
     if m is None:
@@ -1223,13 +1269,12 @@ def find_classical_value(n: int,
     # Enumerating all possible strategies. The first line represents all possible encodings while
     # the second line represents all possible decodings.
     strategies = product(
-                         product(range(d), repeat = m ** n),
-                         product(range(m), repeat = d * n)
-                        )
+        product(range(d), repeat=m**n), product(range(m), repeat=d * n)
+    )
 
     # The variable iterable is an auxiliary variable. It will be transformed into the list `indexes`
     # after.
-    iterable = product(product(range(m), repeat = n), range(n))
+    iterable = product(product(range(m), repeat=n), range(n))
     indexes = []
 
     # The variable iterable if equivalent to the tuples in `generate_bias`, except that it does not
@@ -1239,7 +1284,7 @@ def find_classical_value(n: int,
         decimal = 0
         N = n - 1
         for j in i[0]:
-            decimal += j * m ** N
+            decimal += j * m**N
             N -= 1
         indexes.append((i, decimal))
     indexes = [((a), b, c) for ((a), b), c in indexes]
@@ -1248,7 +1293,7 @@ def find_classical_value(n: int,
 
     # Starting the algorithm by creating a initializing the empty list of classical_probability.
     classical_probability = []
-    start = time()
+    start = tp.time()
 
     for i in strategies:
 
@@ -1270,7 +1315,7 @@ def find_classical_value(n: int,
 
         classical_probability.append(strategy_prob)
 
-    total_time = time() - start
+    total_time = tp.time() - start
 
     # Optimizing over all strategies
     classical_probability = max(classical_probability)
@@ -1278,37 +1323,35 @@ def find_classical_value(n: int,
     # Printing the report
     if verbose:
 
-        print(colors.BOLD + colors.FAINT +
-              f"-" * 28 +
-              f" Summary of computation " +
-              f"-" * 28 +
-              colors.END +
-              f"\n"
-             )
+        print(
+            colors.BOLD
+            + colors.FAINT
+            + f"-" * 28
+            + f" Summary of computation "
+            + f"-" * 28
+            + colors.END
+            + f"\n"
+        )
 
         print(f"Total time of computation: {round(total_time, 5)} s")
 
         if bias is not None:
-            print(f"Kind of bias: {bias}\n" +
-                  f"Weight: {round(weight, 5)}"
-                  if isinstance(weight, (float, int))
-                  else
-                  f"Kind of bias: {bias}\n" +
-                  f"Weights: {weight}"
-                 )
+            print(
+                f"Kind of bias: {bias}\n" + f"Weight: {round(weight, 5)}"
+                if isinstance(weight, (float, int))
+                else f"Kind of bias: {bias}\n" + f"Weights: {weight}"
+            )
 
         superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
-        print(f"Optimal value for the "
-              f"{n}{str(m).translate(superscript)}-->1 RAC:"
-              f" {round(classical_probability, 10)}"
-              f"\n"
-             )
+        print(
+            f"Optimal value for the "
+            f"{n}{str(m).translate(superscript)}-->1 RAC:"
+            f" {round(classical_probability, 10)}"
+            f"\n"
+        )
 
         # Printing the footer of the report.
-        print(f"-" * 30 +
-              f" End of computation " +
-              f"-" * 30
-             )
+        print(f"-" * 30 + f" End of computation " + f"-" * 30)
 
     else:
         return classical_probability
