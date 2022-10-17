@@ -6,20 +6,21 @@
 # e-mail: gpereira@fuw.edu.pl
 # version = '1.0'
 # ==================================================================================================
-"""This file contains the main functions for optimizing an nˆd --> 1 QRAC. The main function can
-be accessed by the command `find_QRAC_value`."""
+"""This file contains the main functions that produce an estimation to the quantum and classical va-
+lues of a QRAC."""
 # ==================================================================================================
 # Imports: time, cvxpy, numpy, scipy and itertools
 # ==================================================================================================
 
+import time as tp
 import cvxpy as cp
 import numpy as np
 import scipy as sp
-import time as tp
 
 import numpy.linalg as nalg
 
 from numpy.random import rand
+from numpy.random import random
 from scipy.linalg import sqrtm
 from scipy.stats import unitary_group
 from itertools import product
@@ -32,111 +33,136 @@ class colors:
     END = "\033[0m"
 
 
-# Thresholds for the optimization problem. The problem value converges much faster than the varia-
-# bles, so we can allow a tighter tolerance for the problem value as low as PROB_BOUND.
+# Threshold for the problem value. The problem value converges much faster than the variables, so we
+# can allow a tighter tolerance for the problem value as low as PROB_BOUND.
 PROB_BOUND = 1e-9
 
-# BOUND is used as tolerance to check the projectivity, rankness, etc, of measurement operators. It
-# is also used as the default value for the convergence criterion in meas_bound.
+# BOUND is used as tolerance to check projectivity, rankness, etc, of the measurement operators. It
+# is also used as the default value for the tolerance in the variables of the problem.
 BOUND = 1e-7
 
-# MUB_BOUND is used in the function check_if_MUBs. This function is less accurate than the other
-# checks. Our analycal results allow us to trust in a higher tolerance for this particular check.
+# MUB_BOUND is used as a tolerance in the function check_if_MUBs. This function is less accurate
+# than the other checks. Our analycal results allow us to trust in a looser tolerance for this par-
+# ticular check.
 MUB_BOUND = 5e-6
 
-# This is the solver's maximaum accuracy. By default, it must be lower than PROB_BOUND and BOUND.
-# Decreasing this number might compromise the feasibility of the problems.
+# This is the solver's maximum accuracy. By default, we set it to be lower than PROB_BOUND and
+# BOUND. Making this number tighter might compromise the feasibility of the problems.
 MOSEK_ACCURACY = 1e-13
 
 # Maximal number of iterations for the optimization problem.
 ITERATIONS = 100
 
 
-def generate_random_measurements(n, d, m):
+def generate_random_measurements(n, d, m, optimal):
 
     """
     Generate random measurements
     ----------------------------
 
-    This function generates n random measurements with m outcomes and dimension d. The first step is
-    to generate m random complex operators named random_op. Then, it transforms these operators into
-    a positive semidefinite matrix and stores them in the list partial_meas. By rescaling partial_
-    sum using the sum of all random_herm operators, it can produce a random measurement.
+    This function generates n random measurements with m outcomes and dimension d.
+
+    First, it generates m complex random operators called random_op. It then transforms random_op
+    into a positive semidefinite and hermitian matrix. Finally, it rescales all random_op operators
+    to guarantee they sum to identity.
+
+    If optimal = "classical", the same procedure is followed, but with diagonal matrices. This gua-
+    rantees that all measurements are diagonal in the same basis.
 
     Input
     -----
     n: an integer.
-        n represents the number of distinct measurements.
-    d: an integer
+        The number of distinct measurements.
+    d: an integer.
         The dimension of the measurement operators.
-    m: an integer
-        The number of outcomes for the generated measurement.
+    m: an integer.
+        The number of outcomes for each measurement.
+    optimal: a string.
+        It can either be "quantum" or "classical". If "classical", it generates diagonal measurement
+        operators.
 
     Output
     ------
     M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
-        M represents a list with n d-dimensional random measurements with m outcomes.
+        M represents a list with n d-dimensional m-outcome random measurements.
     """
 
     # Initializing an empty list of measurements.
     measurements_list = []
     for i in range(0, n):
 
-        # Trying to generate one measurement for 10 times. If, in a certain iteration, a suitable
-        # measurement is not produced, the code skips the iteration in the "CHECKING" points.
+        # This code tries to generate a measurement 10 times. If, in a certain iteration, a suitable
+        # measurement is not produced, it passes to the next iteration.
         attempts = 0
         while attempts < 10:
             attempts += 1
 
-            # Initializing an empty list.
+            # Initializing an empty list of partial measurements.
             partial_meas = []
 
-            # Creating d random complex operators and appending them to the list partial_meas.
-            for j in range(0, m):
+            if optimal == "classical":
 
-                # Generating random complex operators. Each entry should have both the real and ima-
-                # ginary parts between [-1, +1].
-                random_op = (
-                    2 * rand(d, d)
-                    - np.ones((d, d))
-                    + 1j * (2 * rand(d, d) - np.ones((d, d)))
-                )
+                # Creating m random diagonal matrices and appending them to the list partial_meas.
+                for j in range(0, m):
 
-                # Transforming random_op into a hermitian operator. Note that random_herm is also
-                # positive semidefinite by construction.
-                random_herm = random_op.T.conj() @ random_op
+                    diagonal_matrix = np.zeros((d, d), dtype=float)
 
-                partial_meas.append(random_herm)
+                    for k in range(0, d):
+
+                        # random() generates a random number in the interval (0, 1].
+                        diagonal_matrix[k, k] = random()
+
+                    # By construction, diagonal_matrixthey is positive-semidefinite and hermitian.
+                    partial_meas.append(diagonal_matrix)
+
+            elif optimal == "quantum":
+
+                # Creating m random complex operators and appending them to the list partial_meas.
+                for j in range(0, m):
+
+                    # Generating random complex operators. Each entry should have both real and i-
+                    # maginary parts contained in the interval (-1, +1].
+                    random_op = (
+                        2 * rand(d, d)
+                        - np.ones((d, d))
+                        + 1j * (2 * rand(d, d) - np.ones((d, d)))
+                    )
+
+                    # Transforming random_op into a hermitian operator. Note that random_herm is al-
+                    # so positive semidefinite.
+                    random_herm = random_op.T.conj() @ random_op
+
+                    partial_meas.append(random_herm)
 
             partial_sum = np.sum(partial_meas, axis=0)
 
-            # CHECKING if partial_sum is full-rank
+            # Checking if partial_sum is full-rank
             full_rank = nalg.matrix_rank(partial_sum, tol=BOUND, hermitian=True) == d
 
             if full_rank:
 
-                # Initializing an empty list.
+                # Initializing an empty list to append a single measurement.
                 measurement = []
 
-                # This is the operator I will use to rescale the partial_meas list. It is only the
-                # inverse square root of partial_sum.
+                # This operator is used to rescale the partial_meas list. It corresponds to the in-
+                # verse square root of partial_sum.
                 inv_sqrt = nalg.inv(sqrtm(partial_sum))
 
-                # Generating the random measurement operators and appending to the list measurement.
+                # This loop rescales all operators in partial_meas.
                 error = False
                 for j in range(0, m):
 
-                    # Rescaling partial_meas[i]
                     M = inv_sqrt @ partial_meas[j] @ inv_sqrt
-                    # Enforcing hermiticity
+
+                    # Enforcing hermiticity.
                     M = 0.5 * (M + M.conj().T)
 
                     measurement.append(M)
 
-                    # CHECKING if M is positive semidefinite. Recall that eigh produces ordered eige
-                    # nvalues. It suffices to check if the first eigenvalue is non-negative. If it
-                    # is not the case, the boolean variable error is changed to True and another ite
-                    # ration of the while loop will start.
+                    # Checking if M is positive semidefinite. Numpy.linalg.eigh produces ordered
+                    # eigenvalues. So it suffices to check if the first eigenvalue is non-negative.
+                    # If it is not the case, the boolean variable error is changed to True and an-
+                    # other attempt to generate a measurement will start.
                     eigval, eigvet = nalg.eigh(M)
 
                     if eigval[0] < -BOUND:
@@ -144,272 +170,269 @@ def generate_random_measurements(n, d, m):
 
                 if not error:
 
-                    # Last check. CHECKING if the measurement operators sum to identity
+                    # Last check. Checking if the measurement operators sum to identity.
                     sum = np.sum(measurement, axis=0)
                     sum_to_identity = nalg.norm(sum - np.eye(d)) < BOUND
 
-                    # If the last check is satisfied, then `measurement` is finally appended to M.
                     if sum_to_identity:
                         measurements_list.append(measurement)
                         break
 
-        # The execution is finished in the case where this function cannot produce a suitable measu-
-        # rement.
+        # The execution is finished if this function cannot produce a suitable measurement in 10
+        # attempts.
         if attempts == 10:
             raise RuntimeError("a random measurement cannot be generated")
 
     return measurements_list
 
 
-def find_opt_prep(M, d, n, m, bias):
+def find_opt_prep(n, d, m, M, bias):
 
     """
-    Find optimal preparations
-    -------------------------
+    Find the optimal preparations
+    -----------------------------
 
-    This function acts jointly with `opt_state` function. The objective is to generate the set of
-    optimal states for a set of measurements M. It produces a dictionary opt_preps that contains the
-    optimal preparations for a given combination of measurement operators.
+    In the see-saw algorithm, there are three elementary steps. The first is to generate a seed and
+    use it as a starting point for the algorithm. Second, it maximizes the state and third, the
+    measurements. Steps two and three are iterated until the problem converges to a local maximum.
+
+    This functions performs the second step, i.e., the maximization of the state. As for each input
+    of Alice there is a distinct preparation, this function computes each one of these optimal pre-
+    parations and outputs them in the dictionary optimal_preps.
+
+    The optimization of each preparation is performed by the auxiliary function `optimize_preps`.
 
     Inputs
     ------
-    M: a list of lists whose elements are matrices of size d x d.
-        M is a list containing n lists. Each list inside M corresponds to a different measurement in
-        the QRAC task. For each measurement there are m measurement operators.
-    d: an integer.
-        d represents the dimension of the measurement operators.
     n: an integer.
-        n represents the number of distinct measurements.
+        The number of distinct measurements.
+    d: an integer.
+        The dimension of the measurement operators.
     m: an integer.
-        m represents the number of outcomes of each measurement.
-    bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
-    s() are floats.
-        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
+        The number of outcomes for each measurement.
+    M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
+        M represents a list with n d-dimensional m-outcome measurements.
+    bias: a dictionary of size n * m ** n. bias.keys() are (n + 2)-tuples. bias.values() are floats.
+        The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
+        bias in a given QRAC.
 
     Output
     ------
-    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry
-    is a matrix of size d x d.
-        Every element of this dictionary corresponds to a rank-one density matrix for a given prepa-
-        ration of Alice. In a n-dits QRAC, in which the dits are labelled as x_1, x_2, ..., x_n, for
-        every combination of dits, a state is prepared by Alice and sent to Bob. The dictionary opt_
-        preps contains the optimal preparations related to each combination of dits. It is optimal
-        in the sense that it maximizes the figure-of-merit "success probability" for a given set of
-        measurements.
-
-    Example
-    -------
-    Let us say that a QRAC with 3 dits is set. Then, we indicate a combination of measurement opera-
-    tors by a tuple of size 3. The tuple (3, 4, 5) indicates the third outcome for the first measu-
-    rement, the fourth outcome for the second measurement and the fifth for the third measurement.
-    The optimal preparation for the combination of measurement operators (3, 4, 5) is saved in the
-    dictionary opt_preps whose key corresponds to the tuple (3, 4, 5).
+    optimal_preps: a dictionary of size m ** n. optimal_preps.keys() are n-tuples. optimal_preps.va-
+    lues() are d x d matrices.
+        optimal_preps is a dictionary containing the optimal preparations for a given set of meas-
+        urements M. As for each input of Alice there is a distinct preparation, the keys of optimal_
+        preps correpond to the input of Alice. Similarly, the values of optimal_preps correpond to
+        the optimal state prepared when Alice receives the input in optimal_preps.keys().
     """
 
-    # Creating an empty dictionary.
-    opt_preps = {}
+    # Creating an empty dictionary to accommodate Alice's optimal preparations.
+    optimal_preps = {}
 
-    # The variable indexes_of_x list all the possible tuples of size n with elements ranging from
-    # 0 to m - 1.
-    indexes_of_x = product(range(0, m), repeat=n)
+    # The variable alices_inputs list all possible tuples of size n with elements ranging from 0 to
+    # m - 1. These tuples correspond to distinct inputs of Alice.
+    alices_inputs = product(range(0, m), repeat=n)
 
-    # This for runs over all n-tuples of indexes_of_x. In practice, it is a for nested n times.
-    for i in indexes_of_x:
+    # Iterating over all alices_inputs. Since Alice's inputs are a string of n characters, this for
+    # is, in effect, a for nested n times.
+    for i in alices_inputs:
 
-        # Initializing an empty list.
-        operators_list = []
+        # Initializing and empty list. meas_operators_list cointains the measurement operators re-
+        # lated to the i-th input of Alice.
+        meas_operators_list = []
 
         for j in range(0, n):
             for k in range(0, m):
 
-                # Here, I am running over all tuples i, and indexes j and k. The tuple (i, j,
-                # k) corresponds exactly to the keys of the dicitonary bias. Then, for each ele-
-                # ment bias[(i, j, k)] I multiply the correct measurement operator and append to
-                # operators_list. Finally, I compute the optimal preparation for these measurement
-                # operators.
-                operators_list.append(bias[(i, j, k)] * M[j][k])
+                # To compute the optimal preparation of a given input i of Alice, one can simply
+                # calculate the pure state associated with the largest eigenvalue of the operator
+                # sum(meas_operators_list). Each element of meas_operators_list correponds to a k-th
+                # measurement operator of the j-th measurement multiplied by the correct normaliza-
+                # tion and bias (the (i, j, k) element of the dictionary bias).
+                meas_operators_list.append(bias[(i, j, k)] * M[j][k])
 
-        opt_preps[i] = opt_state(operators_list, d)
+        optimal_preps[i] = optimize_preps(meas_operators_list, d)
 
-    return opt_preps
+    return optimal_preps
 
 
-def opt_state(operators_list, d):
+def optimize_preps(operators_list, d):
 
     """
-    Optimal state
-    -------------
+    Optimize preparations
+    ---------------------
 
-    Complementary function for `find_opt_prep` function. In this function, operators_list represents
-    an ordered list of measurement operators of different measurements. The first element corres-
-    ponds to a certain measurement operator of the first measurement and so on.
+    Complementary function for `find_opt_prep`. It computes the the optimal preparation of a given
+    input of Alice.
 
-    For obtaining the optimal preparation for a certain combination of measurement operators, I am
-    computing the eigenvector related to the largest eigenvalue of "average success probability".
-    From this eigenvector, I generate the optimal state.
+    To obtain the optimal state related to a certain preparation of Alice, one can simply calculate
+    the pure state associated with the largest eigenvalue of the operator sum(meas_operators_list).
 
     Inputs
     ------
-    operators_list: a list with n matrices of size d x d.
+    meas_operators_list: a list with n matrices of size d x d.
     d: an integer.
         d represents the dimension of the measurement operators.
 
     Output
     ------
-    rho: an array of size d x d.
-        The optimal state preparation for the combination of measurement operators in operators_
-        list.
+    optimal_prep: a d x d matrix.
+        The optimal state preparation for a single input of Alice.
     """
 
-    # The "average success probability" is defined as simply the sum of the elements in operators_
-    # list.
     sum = np.sum(operators_list, axis=0)
 
-    # numpy.eigh provides the eigenvalues and eigenvectors ordered from the smallest to the largest.
+    # numpy.linalg.eigh gives the eigenvalues in ascending order. The eigenvectors follow the order
+    # of their respective eigenvalues.
     eigval, eigvet = nalg.eigh(sum)
 
-    # Just selecting the eigenvector related to the latest (also largest) eigenvalue.
-    rho = np.outer(eigvet[:, d - 1], eigvet[:, d - 1].conj())
+    # Just selecting the eigenvector related to the largest eigenvalue.
+    optimal_prep = np.outer(eigvet[:, d - 1], eigvet[:, d - 1].conj())
 
-    return rho
+    return optimal_prep
 
 
-def find_opt_meas(opt_preps, d, n, m, bias, mosek_accuracy):
+def find_opt_meas(n, d, m, optimal_preps, bias, mosek_accuracy):
 
     """
-    Find optimal measurements
-    -------------------------
+    Find the optimal measurements
+    -----------------------------
 
-    This function acts jointly with `opt_meas` function. It solves a single step of the see-saw al-
-    gorithm by optimizing all of the measurements of Bob independently. It receives as input a dic-
-    tionary containing the optimal preparations for all combinations of measurement operators of
-    distinct measurements of Bob.
+    This function performs the third step of the see-saw algorithm by optimizing all of the measure-
+    ments of Bob.
 
-    The optimizations of all measurements can be made independently. To optimize over the i-th mea-
-    surement we sum over all indexes of the dictionary opt_preps. Remember that the keys of opt_p
-    reps are n-tuples. Then, a list opt_preps_sum of sums is provided to `opt_meas` function.
+    In a QRAC, the optimization can be made independently for each measurement. For this reason,
+    this function sums the preparations over the inputs of Alice, so the resulting operator is inde-
+    pendent of her inputs. This allows the optimization to be carried out independently for each
+    measurement.
+
+    The optimize_meas function is used in a complementary way. It performs an SDP to obtain a single
+    optimal measurement and the corresponding problem value.
 
     Inputs
     ------
-    opt_preps: a dictionary in which the keys are given by an n-tuple and the content of each entry
-    is a matrix of size d x d.
-    d: an integer.
-        d represents the dimension of the measurement operators.
     n: an integer.
-        n represents the number of distinct measurements.
+        The number of distinct measurements.
+    d: an integer.
+        The dimension of the measurement operators.
     m: an integer.
-        m represents the number of outcomes of each measurement.
-    bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
-    s() are floats.
-        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
+        The number of outcomes for each measurement.
+    optimal_preps: a dictionary of size m ** n. optimal_preps.keys() are n-tuples. optimal_preps.va-
+    lues() are d x d matrices.
+        optimal_preps is a dictionary containing the optimal preparations for a given set of meas-
+        urements M. As for each input of Alice there is a distinct preparation, the keys of optimal_
+        preps correpond to the input of Alice. Similarly, the values of optimal_preps correpond to
+        the optimal state prepared when Alice receives the input in optimal_preps.keys().
+    bias: a dictionary of size n * m ** n. bias.keys() are (n + 2)-tuples. bias.values() are floats.
+        The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
+        bias in a given QRAC.
     mosek_accuracy: a float.
         Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
-        MOSEK. Here it is used for the primal and the dual problem.
+        MOSEK. Here it is used for the primal and the dual problem. It is passed as a parameter to
+        the optimize_meas function.
 
     Output
     ------
-    prob sum: a float
-        It contains the value of the optimization of the "average success probability" after a sin-
-        gle step of the see-saw algorithm.
-    M: a list of lists whose elements are matrices of size d x d.
-        M is the same list as in the function `find_opt_prep` after a single step of the see-saw al-
-        gorithm.
+    problem_value: a float
+        The optimized value of the QRAC functional for a single step of the see-saw algorithm.
+    M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
+        M represents a list with n d-dimensional m-outcome measurements after optimization.
     """
 
-    # Defining empty variables.
+    # Defining empty variables for the measurements and problem value.
     M = []
-    prob_sum = 0
+    problem_value = 0
 
     # Each step of this loop stands for a different measurement.
     for j in range(0, n):
 
-        # Initializing an empty list.
+        # Initializing an empty list of summed optimal preparations. Each element corresponds to the
+        # summed preparations for a given input of Alice.
         opt_preps_sum = []
 
         for k in range(0, m):
 
-            indexes = product(range(0, m), repeat=n)
+            alices_inputs = product(range(0, m), repeat=n)
 
-            # Summing through all indexes of the variable "indexes". This sum is weighted by the
-            # correct bias element, bias[(i, j, k)].
-            sum = np.sum([bias[(i, j, k)] * opt_preps[i] for i in indexes], axis=0)
+            # Summing through all alices_inputs. This sum is weighted by the correct bias element,
+            # bias[(i, j, k)].
+            sum = np.sum(
+                [bias[(i, j, k)] * optimal_preps[i] for i in alices_inputs], axis=0
+            )
 
             # Appending m sums to opt_preps_sum
             opt_preps_sum.append(sum)
 
         # Solving the problem for the j-th measurement
-        prob_value, meas_value = opt_meas(opt_preps_sum, d, n, m, mosek_accuracy)
-        prob_sum += prob_value
-        M.append(meas_value)
+        partial_prob_value, measurement_value = optimize_meas(
+            d, m, opt_preps_sum, mosek_accuracy
+        )
+        problem_value += partial_prob_value
+        M.append(measurement_value)
 
-    return prob_sum, M
+    return problem_value, M
 
 
-def opt_meas(opt_preps_sum, d, n, m, mosek_accuracy):
+def optimize_meas(d, m, opt_preps_sum, mosek_accuracy):
 
     """
-    Optimal measurement
-    -------------------
+    Optimize measurement
+    --------------------
 
-    Complementary function for `find_opt_meas` function. This function takes as input one of Bob's
-    measurements M[i] and a collection of optimal preparations opt_preps with respect to M.
-
-    The structure of this function is a simple SDP optimization for the objective function prob_
-    guess.
+    Complementary function for `find_opt_meas`. This function is a simple SDP program for the objec-
+    tive function guessing_probability. It relies on the solver MOSEK as implemented by the python
+    package CVXPY.
 
     Inputs
     ------
-    opt_preps_sum: list of d matrices of size d x d.
-        This list contains all of the preparations of Alice summed over all indexes but the i-th.
     d: an integer.
-        d represents the dimension of the measurement operators.
-    n: an integer.
-        n represents the number of distinct measurements. I only need n here to calculate the factor
-        multiplying prob_guess.
+        The dimension of the measurement operators.
     m: an integer.
-        m represents the number of outcomes of the measurements.
+        The number of outcomes for each measurement.
+    opt_preps_sum: a list of m matrices of size d x d.
+        Each element corresponds to the summed optimal preparations for a given input of Alice.
     mosek_accuracy: a float.
         Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
         MOSEK. Here it is used for the primal and the dual problem.
 
-
     Outputs
     -------
     prob.value: A float.
-        Numerical solution of prob via CVXPY.
+        Numerical solution of `prob` via MOSEK.
     M_vars: a list of m matrices of size d x d.
-        The optimized measurement M[i] after a single iteration of the see-saw algorithm.
+        M_vars represents a d-dimensional m-outcome measurement after optimization.
     """
 
     # Creating a list of measurements. Each element of this list will be a CVXPY variable.
     M_vars = []
 
-    # Appending the variables to the list:
+    # Appending the variables to the list.
     for i in range(0, m):
         M_vars.append(cp.Variable((d, d), hermitian=True))
 
-    # Defining objective function:
-    prob_guess = 0
+    # Defining the objective function.
+    guessing_probability = 0
     for i in range(0, m):
-        prob_guess += cp.trace(M_vars[i] @ opt_preps_sum[i])
+        guessing_probability += cp.trace(M_vars[i] @ opt_preps_sum[i])
 
-    # Defining constraints:
+    # Defining the constraints to the problem.
     constr = []
     for i in range(0, m):
 
-        # M must be positive semi-definite.
+        # The measurement operators must be positive semi-definite.
         constr.append(M_vars[i] >> 0)
 
     # The elements of M_vars must sum to identity.
     sum = cp.sum(M_vars, axis=0)
     constr.append(sum == np.eye(d))
 
-    # Defining the SDP and solving. CVXPY cannot recognize that the objective function is real.
-    prob = cp.Problem(cp.Maximize(cp.real(prob_guess)), constr)
+    # Defining the SDP problem. CVXPY cannot recognize that the objective function is real, so the
+    # function cvxpy.real() is used.
+    prob = cp.Problem(cp.Maximize(cp.real(guessing_probability)), constr)
 
     # Sometimes MOSEK cannot solve a problem with high accuracy. However, if the seed is changed, a
-    # solution is possible for some cases. So here we apply a random unitary to the preparations,
-    # which is equivalent to producing new seeds. If the problem still remains unfeasilble, we raise
+    # solution is possible in some cases. Here a random unitary is applied to the preparations,
+    # which is equivalent to producing new seeds. If the problem still remains unfeasible, we raise
     # an error.
     attempts = 0
     while attempts < 20 and prob.value is None:
@@ -433,7 +456,7 @@ def opt_meas(opt_preps_sum, d, n, m, mosek_accuracy):
                     M_vars[i] @ (rdm_U @ opt_preps_sum[i] @ rdm_U.conj().T)
                 )
 
-            # Reformulating the problem
+            # Reformulating the problem.
             prob = cp.Problem(cp.Maximize(cp.real(prob_guess)), constr)
 
             pass
@@ -448,156 +471,141 @@ def opt_meas(opt_preps_sum, d, n, m, mosek_accuracy):
     return prob.value, M_vars
 
 
-# ==================================================================================================
-# ---------------------------------------------- MAIN ----------------------------------------------
-# ==================================================================================================
-def find_QRAC_value(
+def find_optimal_value(
     n: int,
     d: int,
     seeds: int,
     m: int = None,
+    bias: str = None,
+    weight=None,
+    optimal: str = "quantum",
     verbose: bool = True,
     prob_bound: float = PROB_BOUND,
     meas_bound: float = BOUND,
     mosek_accuracy: float = MOSEK_ACCURACY,
-    bias: str = None,
-    weight=None,
 ):
     """
-    Find the Quantum Random Acces Code quantum value
-    ------------------------------------------------
+    Find the optimal value
+    ----------------------
 
-    Main function. Here I perform a see-saw optimization for the nˆd --> 1 QRAC. This function
-    can be described in a few elementary steps, as follows:
+    The objective of find_optimal_value is to estimate either the quantum or the classical value of
+    a nˆm --> 1 QRAC whose dimension of the state preparations is d. Besides the three integers n, m
+    and d, the user must input the desired number of starting points in the variable seeds. For each
+    starting point, the code generates a random POVM and uses it to determine the optimal prepara-
+    tions. After iterating over all starting points, it returns the largest optimal value obtained.
+    The user can decide whether it wants to estimate the quantum or classical value by setting the
+    variable optimal equals to "quantum" or "classical".
 
-        1. Create a set of n random measurements with m outcomes acting dimension d with generate_
-        random_measurements.
+    find_optimal_value relies on a see-saw optimization to estimate the quantum and classical values
+    for a QRAC. This algorithm can be summarized in a few elementary steps, as follows:
+
+        1. Create a set of n random measurements with m outcomes acting in dimension d.
         2. For this set of measurements, find the set optimal preparations using `find_opt_prep`.
         3. Optimize the measurements for the set of optimal preparations found in step 2 using `find
         _opt_meas`.
-        4. Check if the variables prob_value and M are converging. If not, return to step 2 till the
-        difference between previous_prob_value and prob_value is smaller than prob_bound. Also, the
-        loop should terminate either when max_norm_difference is smaller than meas_bound or when the
-        number of iterations is bigger than the constant ITERATIONS.
+        4. Check the convergence of variables prob_value and M. In negative case, return to step 2.
 
-    This function also checks if the obtained optimal measurements are MUBs by activating determine_
-    meas_status function.
+    Once the see-saw procedure is over, find_optimal_value prints a detailed report with relevant
+    information about the computation and the optimal set of measurements. This report can be disa-
+    bled by setting the variable verbose = False. In this case, find_optimal_value still returns the
+    same information, but now in the form of a dictionary, `report`, allowing the user to manipulate
+    these data.
+
+    Also, find_optimal_value allows the user to introduce bias in a given QRAC. It can be controlled
+    by the variables `bias` and `weight`, which can be inputted in the argument of find_optimal_va-
+    lue. Check the documentation of generate_bias function for more details.
 
     Inputs
     ------
     n: an integer.
-        n represents the number of distinct measurements.
+        The number of distinct measurements.
     d: an integer.
         The dimension of the measurement operators.
     seeds: an integer.
         Represents the number of random seeds as the starting points of the see-saw algorithm.
-    m: an integer. [optional]
-        The number of outcomes for the measurements. If no value is attributed to m, then m =
-        d.
-    verbose: True or False. True by default. [optional]
-        If true, it activates the function `printings` that produces a report about the computation.
-    prob_bound: a float. [optional]
+    m: an integer.
+        The number of outcomes for each measurement. If no value is attributed to m, then the code
+        sets m = d.
+    bias: a string or an empty variable.
+        It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL", "B_
+        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the QRAC
+        is unbiased. Check the documentation of the `generate_bias` function for more details.
+    weight: a float or a list/tuple of floats.
+        This variable carries the weight with which the QRAC is biased. If `bias` consists on a sin-
+        gle-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists on a
+        multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
+    optimal: a string.
+        It can either be "quantum" or "classical". It tells the function which of the optimal values
+        it should look for.
+    verbose: a boolean.
+        If True, verbose activates the function `printings` which produces a report about the compu-
+        tation. If False, it makes find_optimal_value returns the same information in the dictionary
+        `report`.
+    prob_bound: a float.
         Convergence criterion for the variable prob_value. When the difference between prob_value
         and previous_prob_value is less than prob_bound, the algorithm interprets prob_value = previ
         ous_prob_value.
-    meas_bound: a float. [optional]
+    meas_bound: a float.
         The same criterion as in prob_bound but for the norms of the measurement operators in the
         variable M.
-    mosek_accuracy: a float. [optional]
+    mosek_accuracy: a float.
         Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
         MOSEK. Here it is used for the primal and the dual problem.
-    bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
-    s() are floats.
-        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given QRAC.
-    weight: a float or a list of floats of size m.
-        The variable weight carries the weight (or weights) with which the QRAC is biased. If it is
-        a single float, it must be a positive number between 0 and 1. If it is a list of floats, it
-        must sum to 1.
-        Note that, for the case in which the variable weight is a single float, this variable is
-        symmetrical. That is, setting weight = 0.5 has the same effect as making bias = None.
 
     Output
     ------
     report: a dictionary.
-        report contains the following keys:
-        n: an integer
-            n represents the number of distinct measurements of the QRAC.
-        dimension: an integer.
-            Dimension of the measurement operators.
-        seeds: an integer.
-            The number of random seeds as the starting points of the see-saw algorithm.
-        outcomes: an integer.
-            The number of outcomes for the measurements.
-        bias: a string.
-            The kind of bias used in the QRAC. If bias = None, the QRAC is unbiased.
-        weight: a float or a tuple/list of floats.
-            The weight used in the bias. It can be a float in the case where bias is single-parame-
-            ter, or a tuple/list in the case where bias is multi-parameter.
-        optimal value: a float.
-            The optimal value computed for the nˆm --> 1 QRAC.
-        optimal measurements: a list of lists whose elements are matrices of size d x d.
-            optimal measurements contains a nested list. Each fundamental list corresponds to a dif-
-            ferent measurement in the QRAC task.
-        best seed number: an integer.
-            The seed number that achieves the largest prob_value among all seeds.
-        seed convergence: a list of integers.
-            It contains the number of the seeds whose measurements could converge to meas_bound.
-        average time: a float.
-            The average time of computation for among all seeds.
-        average iterations: a float.
-            The average number of iterations until convergence among all seeds.
-        rank: a numpy array.
-            rank contains the ranks of all measurement operators for the optimal realization.
-        projectiveness: a dictionary.
-            it contains two keys:
-            projective: a numpy array with boolean elements.
-                If True, the measurement operator is considered projective.
-            errors: a numpy array whose elements are floats.
-                It contains a measure of projectiveness for a given operator P. It can be calculated
-                using the Frobenius norm of Pˆ2 - P.
-        MUB check: a nested dicitonary.
-            Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., m. Every element
-            is a dictionary cointaing the variable status, which is obtained from the function check
-            _if_MUBs.
-
-    If verbose = True, report is printed using the funtion `printings`.
+        report is returned if verbose = False. To avoid repetition of the documentation, check the
+        documentation of the function `printings` for details about report.keys().
     """
-    # If no value is attributed for the number of outcomes, then I set m = d.
+
+    # Asserting that `optimal` is either quantum or classical.
+    valid_optimal_types = ("quantum", "classical")
+
+    assert optimal in valid_optimal_types, (
+        "available options for optimal are: " "'quantum' and 'classical'"
+    )
+
+    # If no value is attributed for the number of outcomes, then m = d.
     if m is None:
         m = d
 
-    # Creating an empty dictionary report. If verbose = True, then we print the information con-
-    # tained in the report. If not, the function return report.
+    # Creating an empty dictionary report. If verbose = True, find_optimal_value prints the informa-
+    # tion contained in the report. If not, it returns report.
     report = {}
-    report["seeds"] = seeds
+
+    # Saving the input data in the dictionary.
     report["n"] = n
-    report["outcomes"] = m
     report["dimension"] = d
+    report["seeds"] = seeds
+    report["outcomes"] = m
     report["bias"] = bias
     report["weight"] = weight
+    report["optimal"] = optimal
+    report["mosek accuracy"] = mosek_accuracy
 
-    # Starting the entries "optimal_value" and "optimal measurement" as zeros.
+    # Initializing entries "optimal value" and "optimal measurements".
     report["optimal value"] = 0
     report["optimal measurements"] = 0
 
-    # Here I am generating the bias and saving it in the tensor bias_tensor. By default, the QRAC
-    # is unbiased, so the bias = None.
+    # Generating the bias tensor that encodes the type of bias desired by the user. By default, the
+    # QRAC is unbiased, so the bias = None.
     bias_tensor = generate_bias(n, m, bias, weight)
 
-    # List of times, and number of iterations for each seed. Also seed_convergence stores the infor-
-    # mation of whether the measurements of a given seed have converged below meas_bound. These
-    # lists will contain information to be printed in the final report.
+    # Initializing empty lists. times_list stores the total time for each seed. iterations_list sto-
+    # res the number of iterations of the see-saw algorithm for each seed. optimal_values stores the
+    # optimal values for each seed.
     times_list = []
     iterations_list = []
-    seed_convergence = []
+    optimal_values = []
 
     for i in range(0, seeds):
 
-        # Marking the start of the time count.
+        # Starting point of the time count.
         start_time = tp.process_time()
 
         # Generating a list of n random measurements.
-        M = generate_random_measurements(n, d, m)
+        M = generate_random_measurements(n, d, m, optimal)
 
         # Defining the stopping conditions. The previous_M variable is started as the "null" measu-
         # rement, so to speak. It is just a dummy initialization.
@@ -609,34 +617,33 @@ def find_QRAC_value(
         max_norm_difference = 1
         iter_count = 0
 
-        # The variable prob_value converges faster than M, so that the stopping condition for prob_
-        # value can be smaller. For the measurements, we either stop when max_norm_difference is
-        # smaller than meas_bound or when the number of iterations is bigger than ITERATIONS.
+        # For the measurements, we either stop when max_norm_difference is smaller than meas_bound
+        # or when the number of iterations is bigger than the constant ITERATIONS.
         while (abs(previous_prob_value - prob_value) > prob_bound) or (
             max_norm_difference > meas_bound and iter_count < ITERATIONS
         ):
 
             previous_prob_value = prob_value
 
-            # The two lines below correspond to two a single round of see-saw.
-            opt_preps = find_opt_prep(M, d, n, m, bias_tensor)
+            # The two lines below correspond to two a single round of the see-saw.
+            opt_preps = find_opt_prep(n, d, m, M, bias_tensor)
             prob_value, M = find_opt_meas(
-                opt_preps, d, n, m, bias_tensor, mosek_accuracy
+                n, d, m, opt_preps, bias_tensor, mosek_accuracy
             )
 
+            # Updating max_norm_difference.
             norm_difference = []
             for a in range(0, n):
                 for b in range(0, m):
                     norm_difference.append(nalg.norm(M[a][b] - previous_M[a][b]))
-
             max_norm_difference = max(norm_difference)
+
             previous_M = M
             iter_count += 1
 
-        # Saving the information on whether, for a given seed, there was convergence of measurements
-        # or not.
-        if iter_count < ITERATIONS:
-            seed_convergence.append(i + 1)
+        # Once the see-saw is over, prob_value is appended to optimal_values.
+        optimal_values.append(prob_value)
+        iterations_list.append(iter_count)
 
         # Selecting the largest problem value from all distinct random seeds.
         if prob_value > report["optimal value"]:
@@ -644,22 +651,28 @@ def find_QRAC_value(
             report["optimal measurements"] = M
             report["best seed number"] = i + 1
 
-        # Just append the information of the computation time and the number of iterations.
+        # Here, the execution finishes for one of the seeds.
         times_list.append(tp.process_time() - start_time)
-        iterations_list.append(iter_count)
 
-    # Saving data in the dictionary report to be printed at the ending of the computation.
-    report["seed convergence"] = seed_convergence
+    # This allows the user to know how good the values produced for each QRAC are. It counts how
+    # many optimal values are close to the largest value, in terms of the solver accuracy.
+    close_to_larg_value = 0
+    for i in range(seeds):
+        if report["optimal value"] - optimal_values[i] < mosek_accuracy:
+            close_to_larg_value += 1
+
+    # Saving data in report. To be printed at the ending of the computation.
+    report["close to largest value"] = close_to_larg_value
     report["average time"] = sum(times_list) / seeds
     report["average iterations"] = sum(iterations_list) / seeds
 
+    # Evaluating the realization found for the best seed.
     (
         report["rank"],
         report["projectiveness"],
         report["MUB check"],
-    ) = determine_meas_status(report["optimal measurements"], d, n, m)
-    # verbose is True by default. If True, it prints a report of the computation. If False, it re-
-    # turns the dictionary report.
+    ) = check_meas_status(n, d, m, report["optimal measurements"])
+
     if verbose:
         printings(report)
     else:
@@ -672,59 +685,72 @@ def printings(report):
     Printings
     ---------
 
-    This function simply print a report of the computation if verbose = True. If consists of two
-    parts: a summary of the computation and an analysis of the optimal realization found by the see-
-    saw algorithm.
+    This function simply prints a report of the computation. It consists of two parts: a summary of
+    the computation and an analysis of the optimal realization found for the best seed.
 
     Inputs
     ------
     report: a dictionary.
         report contains the following keys:
         n: an integer
-            n represents the number of distinct measurements of the QRAC.
+            The number of distinct measurements.
         dimension: an integer.
-            Dimension of the measurement operators.
+            The dimension of the measurement operators.
         seeds: an integer.
-            The number of random seeds as the starting points of the see-saw algorithm.
+            Represents the number of random seeds as the starting points of the see-saw algorithm.
         outcomes: an integer.
-            The number of outcomes for the measurements.
-        bias: a string.
-            The kind of bias used in the QRAC. If bias = None, the QRAC is unbiased.
-        weight: a float or a tuple/list of floats.
-            The weight used in the bias. It can be a float in the case where bias is single-parame-
-            ter, or a tuple/list in the case where bias is multi-parameter.
+            The number of outcomes for each measurement.
+        bias: a string or an empty variable.
+            It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL",
+            "B_ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None,
+            the QRAC is unbiased. Check the documentation of the `generate_bias` function for more
+            details.
+        weight: a float or a list/tuple of floats.
+            This variable carries the weight with which the QRAC is biased. If `bias` consists on a
+            single-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists
+            on a multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
+        optimal: a string.
+            It can either be "quantum" or "classical". It tells the find_optimal_value which of the
+            optimal values it should look for.
+        mosek_accuracy: a float.
+            Feasibility tolerance used by the interior-point optimizer for conic problems in the
+            solver MOSEK. Here it is used for the primal and the dual problem.
         optimal value: a float.
-            The optimal value computed for the nˆm --> 1 QRAC.
-        optimal measurements: a list of lists whose elements are matrices of size d x d.
-            optimal measurements contains a nested list. Each fundamental list corresponds to a dif-
-            ferent measurement in the QRAC task.
+            The optimal value computed for the given QRAC.
+        optimal measurements: a list of lists whose elements are d x d matrices.
+            optimal measurements contains a nested list. Each sub-list contains the optimal measure-
+            ment found after optimization.
         best seed number: an integer.
             The seed number that achieves the largest prob_value among all seeds.
-        seed convergence: a list of integers.
-            It contains the number of the seeds whose measurements could converge to meas_bound.
+        close to largest value: an integer.
+            "close to largest value" informs the user how many seeds produced a value that is less
+            than `mosek_accuracy` distant to the largest optimal value found among all seeds.
         average time: a float.
-            The average time of computation for among all seeds.
+            The average computation time among all seeds.
         average iterations: a float.
             The average number of iterations until convergence among all seeds.
         rank: a numpy array.
             rank contains the ranks of all measurement operators for the optimal realization.
         projectiveness: a dictionary.
-            it contains two keys:
-            projective: a numpy array with boolean elements.
-                If True, the measurement operator is considered projective.
-            errors: a numpy array whose elements are floats.
-                It contains a measure of projectiveness for a given operator P. It can be calculated
-                using the Frobenius norm of Pˆ2 - P.
+            It contains two keys:
+            projective: a numpy array whose elements are boolean.
+                projective is an array of projectiveness for all optimal measurement operators ob-
+                tained in find_optimal_value. True if, for a given measurement operator M, the Fro-
+                benius norm of M² - M is smaller than the constant BOUND.
+            projec_measure: a numpy array whose elements are floats.
+                It contains the measure of projectiveness that corresponds to the Frobenius norm of
+                M² - M, for a given measurement operator M.
         MUB check: a nested dicitonary.
-            Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., m. Every element
-            is a dictionary cointaing the variable status, which is obtained from the function check
-            _if_MUBs.
+            report["MUB check"].keys() are tuples of integers (i, j), where i and j represent the
+            indices of two distinct measurements. report["MUB check"].values() are dictionaries
+            which tell the user if the pair of measurements (i, j) is mutually unbiased. See the do-
+            cumentation of the `check_if_MUBs` function for details.
     """
 
-    # This command is to allow printing superscripts in the prompt.
+    # This command allows printing superscripts in the prompt.
     superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 
-    # Printing header
+    # Printing the header.
     print(
         f"\n" + f"=" * 80 + f"\n" + f" " * 32 + f"QRAC-tools v1.0\n" + f"=" * 80 + f"\n"
     )
@@ -740,43 +766,52 @@ def printings(report):
         + f"\n"
     )
 
-    if report["seed convergence"] == []:
-        report["seed convergence"].append(None)
-
     print(
         f"Number of random seeds: {report['seeds']}\n"
-        f"Best seed: {report['best seed number']} \n"
-        f"Seeds whose measurements converged below meas_bound: "
-        f"{', '.join(str(i) for i in report['seed convergence'])}\n"
-        f"Average time until convergence: {round(report['average time'], 5)} s\n"
-        f"Average number of iterations until convergence: "
-        f"{round(report['average iterations'])}\n"
+        + f"Average time for each seed: {round(report['average time'], 5)} s\n"
+        + f"Average number of iterations: "
+        + f"{round(report['average iterations'])}\n"
+        + f"Seeds {report['mosek accuracy']} close to the best value: "
+        + f"{report['close to largest value']}\n"
+        if report["seeds"] > 1
+        else f"Number of random seeds: {report['seeds']}\n"
+        + f"Total time of computation: {round(report['average time'], 5)} s\n"
+        + f"Total number of iterations: "
+        + f"{round(report['average iterations'])}\n"
     )
 
-    # Printing the second part of the report. Analysis of the optimal realisation.
+    # Printing the second part of the report. Analysis of the optimal realization.
     print(
         colors.BOLD
         + colors.FAINT
-        + f"-" * 21
-        + f" Analysis of the optimal realisation "
-        + f"-" * 22
+        + f"-" * 15
+        + f" Analysis of the optimal realization for seed #{report['best seed number']} "
+        + f"-" * 16
+        + colors.END
+        + f"\n"
+        if report["best seed number"] < 10
+        else colors.BOLD
+        + colors.FAINT
+        + f"-" * 15
+        + f" Analysis of the optimal realization for seed #{report['best seed number']} "
+        + f"-" * 15
         + colors.END
         + f"\n"
     )
 
     if report["bias"] is not None:
         print(
-            f"Kind of bias: {report['bias']}\n"
+            f"Type of bias: {report['bias']}\n"
             + f"Weight: {round(report['weight'], 5)}"
             if isinstance(report["weight"], (float, int))
-            else f"Kind of bias: {report['bias']}\n" + f"Weights: {report['weight']}"
+            else f"Type of bias: {report['bias']}\n" + f"Weights: {report['weight']}"
         )
 
     print(
-        f"Optimal value for the "
-        f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
-        f" {report['optimal value'].round(12)}"
-        f"\n"
+        f"Estimation of the {report['optimal']} value for the "
+        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
+        + f" {report['optimal value'].round(12)}"
+        + f"\n"
     )
 
     # Printing the ranks of the measurement operators.
@@ -792,81 +827,86 @@ def printings(report):
     print(colors.CYAN + f"Measurement operator projectiveness" + colors.END)
 
     projective = report["projectiveness"]["projective"]
-    errors = report["projectiveness"]["errors"]
+    projec_measure = report["projectiveness"]["projectiveness measure"]
 
     for i in range(0, report["n"]):
         for j in range(0, report["outcomes"]):
             print(
                 f"M[{str(i)}, {str(j)}]:  Projective\t\t"
-                f"{str(float('%.3g' % errors[i][j]))}"
+                + f"{str(float('%.3g' % projec_measure[i][j]))}"
                 if projective[i][j]
                 else f"M[{str(i)}, {str(j)}]:  Not projective\t"
-                f"{str(float('%.3g' % errors[i][j]))}"
+                + f"{str(float('%.3g' % projec_measure[i][j]))}"
             )
 
     if report["MUB check"] is not None:
         keys = list(report["MUB check"].keys())
 
         print(" ")
-        print(colors.CYAN + f"Mutually unbiasedness of measurements" + colors.END)
+        print(colors.CYAN + f"Mutual unbiasedness of measurements" + colors.END)
 
         for i in keys:
             print(
                 f"M[{str(i[0])}] and M[{str(i[1])}]:  MUM\t\t"
-                f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
-                if report["MUB check"][i]["boolean"]
+                f"{str(float('%.3g' % report['MUB check'][i]['MUM measure']))}"
+                if report["MUB check"][i]["MUM"]
                 else f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUM\t\t"
-                f"{str(float('%.3g' % report['MUB check'][i]['max error']))}"
+                f"{str(float('%.3g' % report['MUB check'][i]['MUM measure']))}"
             )
 
     # Printing the footer of the report.
-    print(" ")
+    print("")
     print(f"-" * 30 + f" End of computation " + f"-" * 30)
 
 
-def determine_meas_status(M, d, n, m):
+def check_meas_status(n, d, m, M):
 
     """
-    Determine measurement status
-    ----------------------------
+    Check measurement status
+    ------------------------
 
-    This function simply checks the status of the optimized measurements. It checks whether the mea-
-    surement operators are Hermitian, positive semi-definite, rank-one, projective and if they sum
-    to identity, not necessarily in this order. To finish it checks if all of the pairs of measure-
-    ments are constructed out of mutually unbiased bases using the function `check_if_MUBs`.
+    This function consists of several checks and small numerical calculations for the optimal set of
+    measurements obtained in find_optimal_value. These procedures are summarized as follows:
+
+    1.  Check if the measurement operators are Hermitian.
+    2.  Check if the measurement operators are positive semidefinite.
+    3.  Check if the measurement operators sum to identity.
+    4.  Calculate the rank of the measurement operators.
+    5.  Check if the measurement operators are projective.
+    6.  If at least measurements are rank-one projective, then check how close these measurements
+        are to being mutually unbiased. That is, it checks if these two measurements can be cons-
+        tructed out of Mutually Unbiased Bases.
 
     Inputs
     ------
-    M: a list of lists whose elements are matrices of size d x d.
-        M is a list containing n lists. Each list inside M corresponds to a different measurement in
-        the QRAC task. For each measurement there are m measurement operators.
-    d: an integer.
-        d represents the dimension of the measurement operators.
     n: an integer.
-        n represents the number of distinct measurements.
+        The number of distinct measurements.
+    d: an integer.
+        The dimension of the measurement operators.
     m: an integer.
-        m represents the number of outcomes of the measurements.
+        The number of outcomes for each measurement.
+    M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
+        M represents a list with n d-dimensional m-outcome measurements after optimization.
 
     Output
     ------
     rank: a numpy array.
         rank contains the ranks of all measurement operators for the optimal realization.
     projectiveness: a dictionary.
-        it contains two keys:
-        projective: a numpy array with boolean elements.
-            If True, the measurement operator is considered projective.
-        errors: a numpy array whose elements are floats.
-            It contains a measure of projectiveness for a given operator P. It can be calculated
-            using the Frobenius norm of Pˆ2 - P.
-    MUB check: a nested dicitonary.
-        Its keys are tuples of integers (i, j), with i < j and i, j = 0, ..., m. Every element is
-        a dictionary cointaing the variable status, which is obtained from the function check_if_
-        MUBs.
+        It contains two keys:
+        projective: a numpy array whose elements are boolean.
+            projective is an array of projectiveness for all optimal measurement operators obtained
+            in find_optimal_value. True if, for a given measurement operator M, the Frobenius norm
+            of M² - M is smaller than the constant BOUND.
+        projetive_measure: a numpy array whose elements are floats.
+            It contains the measure of projectiveness that corresponds to the Frobenius norm of M² -
+            M, for a given measurement operator M.
+    MUB_check: a nested dicitonary.
+        MUB_check.keys() are tuples of integers (i, j), where i and j represent the indices of two
+        distinct measurements. MUB_check.values() are dictionaries which contains the information of
+        whether the pair of measurements (i, j) is mutually unbiased. See the documentation of the
+        `check_if_MUBs` function for details.
     """
-
-    # Flag for the MUB checking. If the measurement operators are neither rank-one or projective,
-    # there is no sense on checking if they can be constructed out of MUBs.
-    flag = True
 
     # Checking if the measurement operators are Hermitian.
     for i in range(0, n):
@@ -889,74 +929,86 @@ def determine_meas_status(M, d, n, m):
         if nalg.norm(sum - np.eye(d)) > BOUND:
             raise RuntimeError("measurement operators does not sum to identity")
 
-    # This will return me an array with the ranks of all measurement operators.
+    # The following line returns an array with the ranks of all measurement operators.
     rank = nalg.matrix_rank(M, tol=BOUND, hermitian=True)
-    # Now checking if all of the measurement operators are rank-one.
-    if not (rank == np.ones((n, m), dtype=np.int8)).all():
-        flag = False
 
     # Checking if the measurement operators are projective.
     projective = np.empty((n, m))
-    errors = np.zeros((n, m))
+    projec_measure = np.zeros((n, m))
     for i in range(0, n):
         for j in range(0, m):
 
-            errors[i][j] = nalg.norm(M[i][j] @ M[i][j] - M[i][j])
+            projec_measure[i][j] = nalg.norm(M[i][j] @ M[i][j] - M[i][j])
 
-            if errors[i][j] > BOUND:
+            if projec_measure[i][j] > BOUND:
                 projective[i][j] = False
-                flag = False
             else:
                 projective[i][j] = True
 
-    # The dictionary projectiveness is returned. It contains the information on whether some mea-
-    # surement operator is projective or not and a measure, which is simply the Frobenius norm of
-    # Mˆ2 - M.
-    projectiveness = {"projective": projective, "errors": errors}
+    # Both entries `projective` and `projectiveness measure` are oredered such that the entry [i, j]
+    # refers to the measurement operator from measurement i, outcome j.
+    projectiveness = {
+        "projective": projective,
+        "projectiveness measure": projec_measure,
+    }
 
-    # Checking if the measurements are constructed out of Mutually Unbiased Bases. The dicitonary
-    # MUB_check is returned cointaing the desired information. If flag is False, MUB_check is an
-    # empty variable.
-    if flag:
+    # This block checks if there is at least one pair of rank-one projective measurements. If yes,
+    # this function checks if all such pairs can be constructed out of Mutually Unbiased Bases.
+    rank1_projective_operators = rank == projective
+    rank1_projec_measurements, i = (0, 0)
+    while i < n and rank1_projec_measurements < 2:
+        if (
+            rank1_projective_operators[i]
+            == [
+                1,
+            ]
+            * m
+        ).all():
+            rank1_projec_measurements += 1
+        i += 1
+
+    # Mutually Unbiased Bases check. It relies on the function check_if_MUBs.
+    if rank1_projec_measurements == 2:
         MUB_check = {}
         for i in range(0, n):
             for j in range(i + 1, n):
-                MUB_check[(i, j)] = check_if_MUBs(M[i], M[j], m)
-    else:
-        MUB_check = None
+                MUB_check[(i, j)] = check_if_MUBs(m, M[i], M[j])
 
     return rank, projectiveness, MUB_check
 
 
-def check_if_MUBs(P, Q, m, mub_bound=MUB_BOUND):
+def check_if_MUBs(m, P, Q):
 
     """
     Check if two measurements are mutually unbiased
     -----------------------------------------------
 
-    This function works jointly with `determine_meas_status` function. It simply gets two d-dimen-
-    sional measurements P and Q, and checks if they are constructed out of Mutually Unbiased Bases.
-    Check appendix II of the supplementary material of the reference for details.
+    Complementary function for `check_meas_status`. It simply gets two d-dimensional m-outcome meas-
+    urements P and Q, and checks if they can be constructed out of Mutually Unbiased Bases (MUBs).
+    See appendix II of the supplementary material of the reference below for details.
 
     Inputs
     ------
-    P: a list with m matrices of size d x d.
-        A measurement with m outcomes acting on dimension d.
-    Q: a list with m matrices of size d x d.
-        Another measurement with m outcomes acting on dimension d.
     m: an integer.
-        m represents the number of outcomes of the measurements.
-    mub_bound: a float.
-        If PQP-P < mub_bound, then the equation PQP = P is considered satisfied and the measurements
-        P and Q are considered mutually unbiased.
+        The number of outcomes for each measurement.
+    P: a list of m d x d matrices.
+        A d-dimensional m-outcome measurement. Its measurement operators are rank-one projective.
+    Q: a list of m d x d matrices.
+        Another d-dimensional m-outcome measurement whose measurement operators are rank-one projec-
+        tive.
 
     Output
     ------
-    status: a dictionary with two entries. A boolean variable and a float.
-        The first key of this dictionary is named boolean. If True, P and Q are considered mutually
-        unbiased up to the numerical precision of mub_bound. The second key is named max_error and
-        contains the maximum norm difference by which the measurement operators of P and Q do not
-        satisfy the equations mPQP = P and mQPQ = Q.
+    status: a dictionary.
+        status contains the following keys:
+            MUM: a boolean.
+                True if P and Q are considered mutually unbiased up to the numerical precision of
+                the constant MUB_BOUND
+            MUM measure: a float.
+                It contains the measure of mutual unbiasedness of measurements P and Q. If p and q
+                are measurement operators of rank-one projective measurements P and Q, respectively,
+                then this measure can be written as max{m * pqp - p, m * qpq - q}, where max is ta-
+                ken over all combinations of p and q.
 
     Reference
     ---------
@@ -964,22 +1016,22 @@ def check_if_MUBs(P, Q, m, mub_bound=MUB_BOUND):
     symmetric informationally complete measurements in Bell experiments, Sci. Adv., vol. 7, issue 7.
     DOI: 10.1126/sciadv.abc3847.
     """
-    status = {"boolean": True}
+    status = {"MUM": True}
 
-    errors = []
+    partial_measures = []
     for i in range(0, m):
         for j in range(0, m):
 
-            errorP = nalg.norm(m * P[i] @ Q[j] @ P[i] - P[i])
-            errorQ = nalg.norm(m * Q[j] @ P[i] @ Q[j] - Q[j])
+            partial_measP = nalg.norm(m * P[i] @ Q[j] @ P[i] - P[i])
+            partial_measQ = nalg.norm(m * Q[j] @ P[i] @ Q[j] - Q[j])
 
-            errors.append(errorP)
-            errors.append(errorQ)
+            partial_measures.append(partial_measP)
+            partial_measures.append(partial_measQ)
 
-            if errorP > mub_bound or errorQ > mub_bound:
-                status["boolean"] = False
+            if partial_measP > MUB_BOUND or partial_measQ > MUB_BOUND:
+                status["MUM"] = False
 
-    status["max error"] = max(errors)
+    status["MUM measure"] = max(partial_measures)
 
     return status
 
@@ -992,86 +1044,77 @@ def generate_bias(n, m, bias, weight):
 
     This function generates a dictionary in which the keys are tuples of the form
 
-    i = ((x_1, x_2, x_3, ... , x_n), y, b)
+    i = ((x_0, x_1, x_2, ... , x_{n - 1}), y, b)
 
-    where x_1, x_2, x_3, ... , x_n and b range from 0 to m - 1 and y ranges from 0 to n - 1. The
-    object bias tensor[i] represents a order-(n+2) tensor encoding the bias in some given QRAC.
+    where x_0, x_1, ... , x_{n - 1} and b range from 0 to m - 1 and y ranges from 0 to n - 1. The
+    object bias_tensor[i] represents an order-(n + 2) tensor encoding the bias and the normalization
+    in a given n^m --> 1 QRAC.
 
-    If bias = None, the QRAC is unbiased and all of the n * m ** n elements in bias_tensor are
-    uniform. The elements of bias_tensor are strictly bigger than zero whenever i[2] == i[0][i[1]].
+    If bias = None, the QRAC is unbiased and all of the n * m ** n elements in bias_tensor are uni-
+    form. For a QRAC, the elements of bias_tensor are strictly bigger than zero whenever i[2] ==
+    i[0][i[1]].
 
-    There are eight possible kinds of bias, as follows.
-    1. "XDIAG". Bias in the input string x. The elements of the main diagonal of the order-n tensor
-    i[0] are prefered with probability `weight`. For the n = 2 QRAC, it translates as
+    If bias is not None, then it must assume one of the following types:
 
-    x_1/x_2 | 0  1  2 ... m-1
-    0       | *  .  .       .
-    1       | .  *  .       .
-    2       | .  .  *       .
-    :       |
-    m-1   | .  .  .       *
+        1.  "Y_ONE". Bias in the requested character y of Bob. The element 0 of i[1] is weighted
+            according to the variable `weight`. It consists on a single-paramater family of bias in
+            which we have one of the requested characters versus all.
 
-    2. "XCHESS". Bias in the input string x. The elements of the order-n tensor i[0] are prefered
-    with probability `weight`, in an array that resembles a chess table. If n = 2,
+        2.  "Y_ALL". Bias in the requested character y of Bob. The y-th element of i[1] is weighted
+            according to weight[y]. Differently of the previous case, this is a multi-parameter fa-
+            mily of bias.
 
-    x_1/x_2 | 0  1  2 ... m-1
-    0       | .  *  .       *
-    1       | *  .  *       .
-    2       | .  *  .       *
-    :       |
-    m-1   | *  .  *       .
+        3.  "B_ONE". Bias in the retrieved character b of Bob. The element 0 of i[2] is weighted ac-
+            cording to the variable `weight`.
 
-    3. "XPARAM". Bias in the input string x. The element (0, 0, ..., 0) of the order-n tensor i[0]
-    is prefered probability `weight`.
+        4.  "B_ALL". Bias in the retrieved character b of Bob. The b-th element of i[2] is weighted
+            according to weight[b].
 
-    4. "XPLANE". Bias in the input string x. The "plane" x_1 = 0 in the order-n tensor i[0] is pre-
-    frered with probability `weight`.
+        5.  "X_ONE". Bias in the input string x_0, x_1, x_2, ... , x_{n - 1} of Alice. The element
+            (0, 0, ..., 0) of the tensor i[0] is weighted according to the variable `weight`.
 
-    5. "YPARAM". Bias in the requested digit y. The element 0 of i[1] is prefered with probability
-    `weight`.
+        6.  "X_DIAG". Bias in the input string of Alice. The elements of the main diagonal of the
+            tensor i[0] are is weighted according to the variable `weight`.
 
-    6. "YVEC". Bias in the requested digit y. The y-th element of i[1] is prefered with probability
-    weight[y].
+        7.  "X_CHESS". Bias in the input string of Alice. The elements of the tensor i[0] whose sum
+            is odd are weighted according to the variable `weight`. For n = 2, the arrangement be-
+            tween preferred and non-preferred elements resembles a chess table.
 
-    7. "BPARAM". Bias in the retrieved output b. The element 0 of i[2] is prefered with probability
-    `weight`.
-
-    8. "BVEC". Bias in the retrieved output b. The b-th element of i[2] is prefered with probability
-    weight[b].
+        8.  "X_PLANE". Bias in the input string of Alice. The hyperplane corresponding to x_0 = 0 in
+            the i[0] tensor is preferred with probability `weight`.
 
     Inputs
     ------
     n: an integer.
-        n represents the number of distinct measurements.
+        The number of distinct measurements.
     m: an integer.
-        m represents the number of outcomes of the measurements.
+        The number of outcomes for each measurement.
     bias: a string or an empty variable.
-        It encodes the type of bias desired for the computation. There are eight possibilities: "XDI
-        AG", "XCHESS", "XPARAM", "XPLANE", "YPARAM", "YVEC", "BPARAM" and "BVEC". If bias = None,
-        the QRAC is unbiased.
+        It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL", "B_
+        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the QRAC
+        is unbiased.
     weight: a float or a list of floats of size m.
-        The variable weight carries the weight (or weights) with which the QRAC is biased. If it
-        is a single float, it must be a positive number between 0 and 1. If it is a list of floats,
-        it must sum to 1.
-        Note that, for the case in which the variable weight is a single float, this variable is
-        symmetrical. That is, setting weight = 0.5 has the same effect as making bias = None.
+        The variable weight carries the amount of bias the user desires in a given input (x or y) or
+        output. If `bias` is a single-parameter family, then `weight` must be a float ranging from
+        0 to 1. If `bias is a multi-parameter family, `weight` must be a list (or tuple) of floats
+        summing to 1.
 
     Output
     ------
-    bias_tensor: a dictionary of size n * m ** n. bias_tensor.keys() are tuples of n + 2 coordina-
-    tes. bias_tensor.values() are floats.
-        bias_tensor represents a order-(n+2) tensor encoding the bias in some given QRAC.
+    bias: a dictionary of size n * m ** n. bias.keys() are (n + 2)-tuples. bias.values() are floats.
+        The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
+        bias in a given QRAC.
     """
 
-    # This first part of the funtion is just for assertions.
+    # First asserting the input parameters.
 
     # sw/mw stands for single/multiple weights.
-    valid_bias_types_sw = ("XDIAG", "XCHESS", "XPARAM", "XPLANE", "YPARAM", "BPARAM")
-    valid_bias_types_mw = ("YVEC", "BVEC")
+    valid_bias_types_sw = ("X_ONE", "X_DIAG", "X_CHESS", "X_PLANE", "Y_ONE", "B_ONE")
+    valid_bias_types_mw = ("Y_ALL", "B_ALL")
 
     assert bias is None or bias in valid_bias_types_sw or bias in valid_bias_types_mw, (
         "Available options for bias are: "
-        "XDIAG, XCHESS, XPARAM, XPLANE, YPARAM, YVEC, BPARAM and BVEC."
+        "X_ONE, X_DIAG, X_CHESS, X_PLANE, Y_ONE, Y_ALL, B_ONE and B_ALL."
     )
 
     if bias is not None:
@@ -1084,25 +1127,22 @@ def generate_bias(n, m, bias, weight):
 
         assert isinstance(
             weight, (list, tuple)
-        ), "For YVEC and BVEC bias, `weight` must be a list or a tuple"
+        ), "For Y_ALL and B_ALL bias, `weight` must be a list or a tuple"
 
-        if bias == "YVEC":
+        if bias == "Y_ALL":
 
             assert len(weight) == n, "the expected size of `weight` is n"
             assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
-        elif bias == "BVEC":
+        elif bias == "B_ALL":
 
             assert len(weight) == m, "the expected size of `weight` is m"
             assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
-    # Now, the code actually starts.
-
     # Initializing an empty dicitonary.
     bias_tensor = {}
 
-    # Creating an iterable for feeding bias_tensor. The keys of bias_tensor will be the tuples defi-
-    # ned by the iterable indexes.
+    # Creating an iterable to represent the keys of bias_tensor.
     indexes = product(product(range(0, m), repeat=n), range(0, n), range(0, m))
 
     for i in indexes:
@@ -1110,29 +1150,67 @@ def generate_bias(n, m, bias, weight):
         # Enforcing the QRAC condition.
         if i[2] == i[0][i[1]]:
 
-            # The elements must be uniform. There n * m ** n elements in bias_tensor in total.
+            # The elements must be normalized. There are n * m**n elements in total.
             bias_tensor[i] = 1 / (n * m**n)
 
-            # Separating in cases. If bias = None, none of the below cases will match, and the re-
-            # sulting bias_tensor will be unbiased.
+            # Separating in cases. If bias is None, none of the below cases will match, and the re-
+            # sulting tensor will be only normalized.
             if bias is None:
                 continue
 
-            elif bias == "XDIAG":
+            elif bias == "Y_ONE":
 
-                # If i[0] is a diagonal element, then it is prefered with `weight`. If not, it
-                # is prefered with 1 - weight. The other cases follow similarly.
+                # If i[1] == 0, it is weighted according to `weight`. If not, it is weighted accor-
+                # ding to 1 - weight distributed uniformly for the other n - 1 requested characters.
+                # The factor n is a normalization factor for the bias in the requested character.
+                if i[1] == 0:
+                    bias_tensor[i] = n * weight * bias_tensor[i]
+                else:
+                    bias_tensor[i] = n * (1 - weight) * bias_tensor[i] / (n - 1)
+
+            elif bias == "Y_ALL":
+
+                # If i[1] == y, it is weighted according to weight[y].
+                bias_tensor[i] = n * weight[i[1]] * bias_tensor[i]
+
+            elif bias == "B_ONE":
+
+                # For bias in the retrieved character b, the normalization factor is m.
+                if i[2] == 0:
+                    bias_tensor[i] = m * weight * bias_tensor[i]
+                else:
+                    bias_tensor[i] = m * (1 - weight) * bias_tensor[i] / (m - 1)
+
+            elif bias == "B_ALL":
+
+                bias_tensor[i] = m * weight[i[2]] * bias_tensor[i]
+
+            elif bias == "X_ONE":
+
+                # For bias in the input string the normalization factor is m**n.
+                if i[0] == (0,) * n:
+                    bias_tensor[i] = (m**n) * weight * bias_tensor[i]
+                else:
+
+                    # If i[0] != (0,0,...,0), we distribute 1 - weight over the m**n - 1 remaining
+                    # strings.
+                    bias_tensor[i] = (
+                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - 1)
+                    )
+
+            elif bias == "X_DIAG":
+
                 if len(set(i[0])) == 1:
 
-                    # The constants multiplying and dividing bias_tensor[i] are an effect of the re-
-                    # normalization due to the introduction of bias.
+                    # There are m elements in the diagonal of i[0], so we distribute `weight` uni-
+                    # formly over these m elements.
                     bias_tensor[i] = (m**n) * weight * bias_tensor[i] / m
                 else:
                     bias_tensor[i] = (
                         (m**n) * (1 - weight) * bias_tensor[i] / (m**n - m)
                     )
 
-            elif bias == "XCHESS":
+            elif bias == "X_CHESS":
 
                 # Here the normalization depends on the parity of m ** n. Recall that parity(m) ==
                 # parity(m ** n), for positive n and m.
@@ -1151,44 +1229,12 @@ def generate_bias(n, m, bias, weight):
                             2 * (m**n) * (1 - weight) * bias_tensor[i] / (m**n + 1)
                         )
 
-            elif bias == "XPARAM":
-
-                if i[0] == (0,) * n:
-                    bias_tensor[i] = (m**n) * weight * bias_tensor[i]
-                else:
-                    bias_tensor[i] = (
-                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - 1)
-                    )
-
-            elif bias == "XPLANE":
+            elif bias == "X_PLANE":
 
                 if i[0][0] == 0:
                     bias_tensor[i] = m * weight * bias_tensor[i]
                 else:
                     bias_tensor[i] = m * (1 - weight) * bias_tensor[i] / (m - 1)
-
-            elif bias == "YPARAM":
-
-                if i[1] == 0:
-                    bias_tensor[i] = n * weight * bias_tensor[i]
-                else:
-                    bias_tensor[i] = n * (1 - weight) * bias_tensor[i] / (n - 1)
-
-            elif bias == "BPARAM":
-
-                if i[2] == 0:
-                    bias_tensor[i] = m * weight * bias_tensor[i]
-                else:
-                    bias_tensor[i] = m * (1 - weight) * bias_tensor[i] / (m - 1)
-
-            elif bias == "YVEC":
-
-                bias_tensor[i] = n * weight[i[1]] * bias_tensor[i]
-
-            elif bias == "BVEC":
-
-                bias_tensor[i] = m * weight[i[2]] * bias_tensor[i]
-
         else:
             bias_tensor[i] = 0
 
@@ -1196,28 +1242,25 @@ def generate_bias(n, m, bias, weight):
 
 
 def find_classical_value(
-    n: int, d: int, m: int = None, verbose=True, bias: str = None, weight=None
+    n: int, d: int, m: int = None, bias: str = None, weight=None, verbose=True
 ):
 
-    """
-    Find the Quantum Random Acces Code classical value
-    --------------------------------------------------
+    """[OBSOLETE]
+    Find the classical value
+    ------------------------
 
-    This function is the classical analogous of `find_QRAC_value`. Unlike `find_QRAC_value`, this
-    function finds the optimal value of a RAC (Random Acess Code) by optimizing over all encoding
-    and decoding strategies.
+    find_classical_value can be operated similarly as find_optimal_value. Differently from the lat-
+    ter, this function computes the classical value of a QRAC exactly by selecting the best encond-
+    ing and decoding strategies.
 
-    In a RAC, one desires to encode n digits ranging from 0 to m - 1 in another digit ranging from 0
-    to d - 1. In total, there are d^(m^n) encoding strategies and m^(d*n) decoding strategies, so
-    this function scales double exponentially. It performs a simple maximization over all combina-
-    tions of encoding and decoding strategies.
+    In a QRAC, one desires to encode n characters ranging from 0 to m - 1 into another character
+    ranging from 0 to d - 1. In total, there are d**(m**n) encoding strategies and m**(d * n) decod-
+    ing strategies, so this function scales double exponentially. It performs a simple maximization
+    over all combinations of encoding and decoding strategies.
 
     Cases you can expect to compute in less than one hour, for tuples of (n, d, m):
     (2, 2, 2), (2, 2, 3), (2, 2, 4), (2, 3, 2), (2, 3, 3), (2, 4, 2), (2, 5, 2), (2, 6, 2),
     (2, 7, 2), (2, 8, 2), (3, 2, 2), (3, 3, 2), (3, 4, 2) and (4, 2, 2).
-
-    Cases (2, 4, 2), (2, 5, 2), (2, 6, 2), (2, 7, 2) are (2, 8, 2) equivalent and trivial (return 1
-    as the classical value).
 
     Inputs
     ------
@@ -1225,33 +1268,29 @@ def find_classical_value(
         n represents the number of encoded digits.
     d: an integer.
         d represents the size of the message to be passed to Bob.
-    m: an integer. [optional]
+    m: an integer.
         m represents the size of the digits of Alice. If Alice has n digits, then these each of the-
         se digits range from 0 to m - 1. By default, m = d.
-    verbose: True or False. True by default. [optional]
-        If true, it prints a small report cointaing the classical value if the proposed RAC. If fal-
-        se, it returns the classical value.
-    bias: a dictionary of size n * m ** n. bias.keys() are tuples of n + 2 coordinates. bias.value
-    s() are floats.
-        The dictionary bias represents a order-(n+2) tensor encoding the bias in some given RAC.
-    weight: a float or a list of floats of size m.
-        The variable weight carries the weight (or weights) with which the RAC is biased. If it is a
-        single float, it must be a positive number between 0 and 1. If it is a list of floats, it
-        must sum to 1.
-        Note that, for the case in which the variable weight is a single float, this variable is
-        symmetrical. That is, setting weight = 0.5 has the same effect as making bias = None.
+    bias: a string or an empty variable.
+        It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL", "B_
+        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the QRAC
+        is unbiased. Check the documentation of the `generate_bias` function for more details.
+    weight: a float or a list/tuple of floats.
+        This variable carries the weight with which the QRAC is biased. If `bias` consists on a sin-
+        gle-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists on a
+        multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
+    verbose: a boolean. True by default.
+        If true, it prints a small report cointaing the classical value and the total computation
+        time. If false, it simply returns the classical value.
 
     Outputs
     -------
-    If verbose = True, it prints a small report containing the classical value for the given RAC. If
-    not, it returns
-
     classical_probability: a float.
-        The classical value for the n^m --> 1 RAC.
+        The classical value for the n^m --> 1 QRAC.
     """
 
     if verbose:
-        # Printing header
+        # Printing header.
         print(
             f"\n"
             + f"=" * 80
