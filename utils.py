@@ -973,6 +973,8 @@ def check_meas_status(n, d, m, M):
         for i in range(0, n):
             for j in range(i + 1, n):
                 MUB_check[(i, j)] = check_if_MUBs(m, M[i], M[j])
+    else:
+        MUB_check = None
 
     return rank, projectiveness, MUB_check
 
