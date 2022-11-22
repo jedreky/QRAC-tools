@@ -1,5 +1,5 @@
-ipython==8.2.0
-numpy==1.22.3
-scipy==1.8.0
-cvxpy==1.2.0
-Mosek==9.3.18
+ipython >= 7.31.1
+numpy >= 1.21.5
+scipy >= 1.7.3
+cvxpy >= 1.1.7
+Mosek >= 9.3.18

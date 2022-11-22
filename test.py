@@ -129,12 +129,14 @@ def test_qubit_qracs(seeds):
     Randomness, available in arXiv:0810.2937.
     """
 
-    # This is the theoretical quantum value provided by the literature. For n = 2 and n = 3, the
-    # quantum value is known exactly.
+    # These are the theoretical quantum values provided by the literature. For n = 2 and n = 3, the
+    # quantum value is known exactly. For n > 4 these are just conjectured values. For n = 4, the
+    # value below is calculated by using the conjectured measurements for this case, i.e., X, Y, Z
+    # and X, where X, Y, and Z are the Pauli matrices.
     literature_value = {
                         2: (1 + 1 / np.sqrt(2)) / 2,
                         3: (1 + 1 / np.sqrt(3)) / 2,
-                        4:  0.741481,
+                        4:  0.7414814565722667,
                         5:  0.713578,
                         6:  0.694046,
                         7:  0.678638,
@@ -173,10 +175,12 @@ def test_higher_dim_qracs(seeds):
     It prints a list containing the literature quantum value, the computed quantum value and the
     difference between both values, for each value of d.
 
-    Reference
-    ---------
+    References
+    ----------
     The quantum values in 'literature_value' can be found in:
-    1. M. Farkas and J. Kaniewski, Self-testing mutually unbiased bases in the prepare-and-measure
+    1. E. A. Aguilar, J. J. Borkala, P. Mironowicz, M. Pawlowski, Connections between Mutually Un-
+    biased Bases and Quantum Random Access Codes, Phys. Rev. Lett., 121, 050501, 2018.
+    2. M. Farkas and J. Kaniewski, Self-testing mutually unbiased bases in the prepare-and-measure
     scenario. Phys. Rev. A, 99, 032316, 2019.
     """
 
