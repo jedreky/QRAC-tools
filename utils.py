@@ -17,10 +17,9 @@ import cvxpy as cp
 import numpy as np
 import scipy as sp
 import constants as const
+import numpy.linalg as nalg
 import warnings
 
-
-import numpy.linalg as nalg
 
 from numpy.random import rand
 from numpy.random import random
@@ -120,7 +119,9 @@ def generate_random_measurements(n, d, m, diagonal):
             partial_sum = np.sum(partial_meas, axis=0)
 
             # Checking if partial_sum is full-rank
-            full_rank = nalg.matrix_rank(partial_sum, tol=const.BOUND, hermitian=True) == d
+            full_rank = (
+                nalg.matrix_rank(partial_sum, tol=const.BOUND, hermitian=True) == d
+            )
 
             if full_rank:
 
@@ -221,8 +222,8 @@ def find_opt_prep(n, d, m, M, bias):
     # is, in effect, a for nested n times.
     for i in alice_inputs:
 
-        # Initializing and empty list. meas_operators_list cointains the measurement operators re-
-        # lated to the i-th input of Alice.
+        # Initializing an empty list. meas_operators_list contains the measurement operators related
+        # to the i-th input of Alice.
         meas_operators_list = []
 
         for j in range(0, n):
@@ -553,9 +554,9 @@ def find_optimal_value(
     """
 
     # Asserting that `diagonal` is a boolean variable.
-    assert diagonal is True or diagonal is False, (
-        "diagonal must be either True or False"
-    )
+    assert (
+        diagonal is True or diagonal is False
+    ), "diagonal must be either True or False"
 
     # If no value is attributed for the number of outcomes, then m = d.
     if m is None:
@@ -843,8 +844,7 @@ def printings(report):
         + f" {report['optimal value'].round(12)}"
         + f"\n"
         if report["diagonal"]
-        else
-        f"Estimation of the quantum value for the "
+        else f"Estimation of the quantum value for the "
         + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
         + f" {report['optimal value'].round(12)}"
         + f"\n"
@@ -1286,7 +1286,7 @@ def find_classical_value(
     m: int = None,
     bias: str = None,
     weight=None,
-    through_dec=True,
+    method=2,
     verbose=True,
 ):
 
@@ -1295,29 +1295,20 @@ def find_classical_value(
     ------------------------
 
     find_classical_value is operated similarly as find_optimal_value. Differently from the latter,
-    this function computes the classical value of a given RAC by two different methods. The first
-    one is done by exhaustive search, so it simply selects the enconding and decoding strategies
-    that produce the best performance for the given RAC. The second method fix a decoding strategy,
-    and converts it into a set of diagonal measurements. After it, it computes the optimal prepara-
-    tions and the value achieved by these preparations and measurements. Finally it selects the best
-    value among all decoding strategies.
+    this function computes the classical value of a given RAC by three different methods. The first
+    method is done by exhaustive search, so it simply selects the enconding and decoding functions
+    that produce the best performance for the given RAC. The second method fix an encoding function
+    and computes the best decoding function for this fixed encoding. Then it selects which of the
+    encoding functions produce the best performance. The third method is the inverse of the second:
+    first it fixes the decoding function, then it computes the best encoding function and maximizes
+    over the decoding functions.
 
     In a RAC, one desires to encode n characters ranging from 0 to m - 1 into another character
-    ranging from 0 to d - 1. In total, there are d**(m**n) encoding strategies and m**(d * n) decod-
-    ing strategies. Thus, the first method scales scales double exponentially, while the second sca-
-    les exponentially.
-
-    As the cost per strategy is lower for exhaustive search, you can expect this method to be better
-    for the cases where the alphabet of integers is small, particulary for (2, 2, 2) and (2, 3, 2),
-    where (n, d, m) represents a tuple for integers n, d and m.
-
-    Using the first method, the user can expect to compute the following cases in less than one hour
-    : (2, 2, 2), (2, 2, 3), (2, 2, 4), (2, 3, 2), (2, 3, 3), (2, 4, 2), (2, 5, 2), (2, 6, 2), (2, 7,
-    2), (2, 8, 2), (3, 2, 2), (3, 3, 2), (3, 4, 2) and (4, 2, 2).
-
-    As for the second method the analogous list is longer than for the first, we suffice to say that
-    for n, d, m < 5, all tuples can be computed in less than one hour except for the cases (3, 4,
-    4), (4, 3, 4), (4, 4, 2) and (4, 4, 4).
+    ranging from 0 to d - 1. In total, there are d**(m**n) encoding functions and m**(d * n) decod-
+    ing functions. Thus, the first method scales scales with the product of the number of enconding
+    and decoding functions, i.e., it scales double exponentially. The second method also scales dou-
+    ble exponentially, but the search over the decoding functions is linear with respect to n, d,
+    and m. The third method scales with d * m**(n * (d + 1)).
 
     Inputs
     ------
@@ -1335,12 +1326,14 @@ def find_classical_value(
         This variable carries the weight with which the RAC is biased. If `bias` consists on a sin-
         gle-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists on a
         multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
-    through_dec: a boolean. True by default.
-        If True, the function computes the classical value using the second method. As the second
-        method is faster for most choices of n, d and m, this is the default.
-    verbose: a boolean. True by default.
-        If true, it prints a small report cointaing the classical value and the total computation
-        time. If false, it simply returns the classical value.
+    method: an integer. 2 by default.
+        It simply determines which of the methods to use. method=0 selects the exhaustive search
+        over encoding and decoding functions. method=1 selects the exhaustive search through the en-
+        coding functions. method=2 selects the exhaustive search through the decoding functions.
+    verbose: a boolean.
+        If True, verbose activates the function `classical_printings` which produces a report about
+        the computation. If False, find_classical_value returns the same information within the
+        dictionary `report`.
 
     Outputs
     -------
@@ -1349,7 +1342,11 @@ def find_classical_value(
         documentation of the function `classical_printings` for details about report.keys().
     """
 
-    # If no value is attributed for the number of outcomes, then I set m = d.
+    # Asserting that method is a valid method.
+    valid_methods = [0, 1, 2]
+    assert method in valid_methods, "choose a method by entering 0, 1 or 2"
+
+    # If no value is attributed for the number of outcomes, then m = d.
     if m is None:
         m = d
 
@@ -1359,142 +1356,334 @@ def find_classical_value(
 
     # Saving the input data in the dictionary.
     report["n"] = n
-    report["dimension"] = d
-    report["outcomes"] = m
+    report["d"] = d
+    report["m"] = m
     report["bias"] = bias
     report["weight"] = weight
-    report["through decodings"] = through_dec
+    report["method"] = method
 
     bias_tensor = generate_bias(n, m, bias, weight)
 
-    # Initializing an empty list of classical_probability.
-    classical_probability = []
-
-    if through_dec:
+    # Now, the code simply selects the method entered by the user.
+    if method == 0:
 
         start = tp.time()
 
-        # Initializing the indexes for the loops ahead.
-        decodings = product(range(m), repeat=d * n)
-        indexes = list(product(product(range(m), repeat=n), range(n), range(m)))
+        (
+            report["classical value"],
+            report["optimal strategy"],
+            report["optimal strategies number"],
+        ) = exhaustive_search(n, d, m, bias_tensor)
 
-        # These matrices are simply d-dimensional rank-one projectors in the computational basis.
-        projectors = [np.zeros((d, d), dtype=float) for i in range(d)]
-        for i in range(d):
-            projectors[i][i, i] = 1
-
-        for i in decodings:
-
-            # In this method, we reuse find_opt_prep to compute the best enconding for a given de-
-            # coding. To do this, we first convert the decoding strategies into measurements. As
-            # these measurements are deterministic, they can be written as diagonal matrices. Here,
-            # we initialize these measurements and convert the decodings into measurements.
-            measurements = [
-                [np.zeros((d, d), dtype=float) for i in range(m)] for j in range(n)
-            ]
-            for a in range(n):
-                for b in range(m):
-                    for c in range(d):
-                        if i[c * n + a] == b:
-                            measurements[a][b] += projectors[c]
-
-            preparations = find_opt_prep(n, d, m, measurements, bias_tensor)
-
-            # Since we have measurements and preparations, we can compute the value of the RAC func-
-            # tional.
-            functional = 0
-            for j in indexes:
-                functional += bias_tensor[j] * np.trace(
-                    preparations[j[0]] @ measurements[j[1]][j[2]]
-                )
-
-            classical_probability.append(functional)
-
-    else:
+    elif method == 1:
 
         start = tp.time()
 
-        # Enumerating all possible strategies. The first product represents all possible encodings
-        # while the second represents all possible decodings.
-        strategies = product(
-            product(range(d), repeat=m**n), product(range(m), repeat=d * n)
-        )
+        (
+            report["classical value"],
+            report["optimal strategy"],
+            report["optimal strategies number"],
+        ) = exhaustive_search_through_encoding(n, d, m, bias_tensor)
 
-        # The variable iterable is just an auxiliary variable. It will be transformed into the list
-        # `indexes` afterwards.
-        iterable = product(product(range(m), repeat=n), range(n))
-        indexes = []
+    elif method == 2:
 
-        # The variable iterable is equivalent to the tuples in `generate_bias`, except that it does
-        # not contain the entry for b. This loop converts the tuple (x_1, x_2, ..., x_n) into a de-
-        # cimal number and saves it in the last entry of `indexes`.
-        for i in iterable:
-            decimal = 0
-            N = n - 1
-            for j in i[0]:
-                decimal += j * m**N
-                N -= 1
-            indexes.append((i, decimal))
-        indexes = [((a), b, c) for ((a), b), c in indexes]
+        start = tp.time()
 
-        for i in strategies:
-
-            strategy_prob = 0
-            for j in indexes:
-
-                # Selecting what messaging digit will be send to Bob.
-                message = i[0][j[2]]
-
-                # Based on the received digit, Bob produces output b.
-                b = i[1][message * n + j[1]]
-
-                # This is simply the RAC condition.
-                if b == j[0][j[1]]:
-
-                    # This is a deterministic strategy. If the RAC condition is satisfied, then pro-
-                    # bability = 1 * bias_tensor.
-                    strategy_prob += bias_tensor[(j[0], j[1], b)]
-
-            classical_probability.append(strategy_prob)
+        (
+            report["classical value"],
+            report["optimal strategy"],
+            report["optimal strategies number"],
+        ) = exhaustive_search_through_decoding(n, d, m, bias_tensor)
 
     report["total time"] = tp.time() - start
-
-    # Optimizing over all strategies.
-    report["classical value"] = max(classical_probability)
-
-    max_index = classical_probability.index(max(classical_probability))
-
-    # This paragraph retrieves the optimal strategy by providing the first index of classical_proba-
-    # bility that achieves the largest value. It simply converts a decimal number into a base m num-
-    # ber. This way saves both memory and computation time from the above loops.
-    strategy_len = d * n if through_dec else m**n + d * n
-    optimal_strategy = np.zeros(strategy_len, dtype=int)
-    while max_index > 0:
-        optimal_strategy[strategy_len - 1] = max_index % m
-        max_index = int(max_index / m)
-        strategy_len -= 1
-
-    report["optimal strategy"] = (
-        tuple(optimal_strategy)
-        if through_dec
-        else (
-            tuple(optimal_strategy[: m**n]),
-            tuple(optimal_strategy[m**n : m**n + d * n]),
-        )
-    )
-
-    # Counting how many strategies achieve the optimal value.
-    optimal_strategies_count = 0
-    for i in classical_probability:
-        if i == report["classical value"]:
-            optimal_strategies_count += 1
-
-    report["optimal strategies number"] = optimal_strategies_count
 
     if verbose:
         classical_printings(report)
     else:
         return report
+
+
+def exhaustive_search(n, d, m, bias_tensor):
+
+    """
+    Exhaustive search
+    -----------------
+
+    This function computes the classical value of a given RAC by simply iterating over all combina-
+    tions of encoding and decoding functions of a Random Access Code. Then it compares what encoding
+    and decoding functions produce the largest value.
+
+    This method scales with d**(m**n) * m**(d * n). The user can expect to compute the following ca-
+    ses in less than one hour: (2, 2, 2), (2, 2, 3), (2, 2, 4), (2, 3, 2), (2, 3, 3), (2, 4, 2),
+    (2, 5, 2), (2, 6, 2), (2, 7, 2), (2, 8, 2), (3, 2, 2), (3, 3, 2), (3, 4, 2) and (4, 2, 2).
+
+    Inputs
+    ------
+    n: an integer.
+        n represents the number of encoded characters.
+    d: an integer.
+        d represents the size of the message to be passed to Bob.
+    m: an integer.
+        m represents the cardinality of the characters of Alice.
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        bias_tensor stores the normalization and the biasing pattern for a given RAC. bias_tensor.
+        keys() are tuples of integers and bias_tensor.values() are floats belonging to the range (0,
+        1]. bias_tensor.values() represent the coefficients of a biased RAC.
+
+    Outputs
+    -------
+    classical_value: a float.
+        The computed classical value for a given RAC.
+    optimal_strategy: a nested tuple of integers.
+        optimal_strategy is made up of two tuples nested within another tuple. The first nested tu-
+        ple is an (n**m)-tuple and represents one of the optimal encoding functions. The second nes-
+        ted tuple is an (d * n)-tuple and represents one of the optimal decoding functions.
+    optimal_strategies_counter: an integer.
+        optimal_strategies_counter contains the number of combinations of encoding and decoding
+        functions that achieve the classical value.
+    """
+
+    # Enumerating all possible encoding and decoding functions. The first product represents all
+    # possible encoding functions, while the second represents all possible decoding functions.
+    strategies = product(
+        product(range(d), repeat=m**n), product(range(m), repeat=d * n)
+    )
+
+    # Now defining the ranges for the summations below.
+    alice_inputs = product(range(m), repeat=n)
+    bob_inputs = range(n)
+
+    # For Alice's inputs, it is useful to convert the tuple (x_0, x_1, ..., x_{n - 1}) into a deci-
+    # mal number. So the last entry in every element of alice_inputs_converted contains this infor-
+    # mation.
+    alice_inputs_converted = []
+    count = 0
+    for i in alice_inputs:
+        alice_inputs_converted.append((i, count))
+        count += 1
+
+    # Initializing variables.
+    classical_value = 0
+    optimal_strategy = None
+    optimal_strategies_counter = 0
+
+    for i in strategies:
+
+        # Functional value for fixed encoding and decoding functions.
+        functional_value = 0
+
+        for j in alice_inputs_converted:
+            for k in bob_inputs:
+
+                # Selecting what messaging digit will be send to Bob.
+                message = i[0][j[1]]
+
+                # Based on the received digit, Bob produces output b.
+                b = i[1][message * n + k]
+
+                # This is simply the RAC condition.
+                if b == j[0][k]:
+
+                    # This is a deterministic strategy. If the RAC condition is satisfied, then we
+                    # sum bias_tensor.
+                    functional_value += bias_tensor[(j[0], k, b)]
+
+        # Now, selecting the largest value.
+        if abs(functional_value - classical_value) < const.BOUND:
+            optimal_strategies_counter += 1
+        elif functional_value - classical_value > const.BOUND:
+            optimal_strategy = i
+            optimal_strategies_counter = 0
+            classical_value = functional_value
+
+    return classical_value, optimal_strategy, optimal_strategies_counter
+
+
+def exhaustive_search_through_encoding(n, d, m, bias_tensor):
+
+    """
+    Exhaustive search through encoding functions
+    --------------------------------------------
+
+    This function computes the classical value of a given RAC by simply iterating over all encoding
+    functions of a Random Access Code. For a fixed encoding function, the best decoding functon is
+    computed. Then it compares what encoding function produces the largest value.
+
+    This method scales with d**(m**n) * m * d * n, so this is the preferable method if d is the lar-
+    gest of the integers and n is small.
+
+    Inputs
+    ------
+    n: an integer.
+        n represents the number of encoded characters.
+    d: an integer.
+        d represents the size of the message to be passed to Bob.
+    m: an integer.
+        m represents the cardinality of the characters of Alice.
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        bias_tensor stores the normalization and the biasing pattern for a given RAC. bias_tensor.
+        keys() are tuples of integers and bias_tensor.values() are floats belonging to the range (0,
+        1]. bias_tensor.values() represent the coefficients of a biased RAC.
+
+    Outputs
+    -------
+    classical_value: a float.
+        The computed classical value for a given RAC.
+    optimal_strategy: a nested tuple of integers.
+        optimal_strategy is made up of two tuples nested within another tuple. The first nested tu-
+        ple is an (n**m)-tuple and represents one of the optimal encoding functions. The second nes-
+        ted tuple is an (d * n)-tuple and represents one of the optimal decoding functions.
+    optimal_encoding_counter: an integer.
+        The total number of different encoding functions achieving the computed value.
+    """
+
+    # Enumerating all encoding functions.
+    encodings = product(range(d), repeat=m**n)
+
+    # Defining the ranges for the summations.
+    alice_inputs = product(range(m), repeat=n)
+    bob_inputs = range(n)
+    sent_message = range(d)
+    bob_outputs = range(m)
+
+    # Here is also convenient to convert the tuple (x_0, x_1, ..., x_{n - 1}) into a decimal number.
+    alice_inputs_converted = []
+    count = 0
+    for i in alice_inputs:
+        alice_inputs_converted.append((i, count))
+        count += 1
+
+    # Initializing variables.
+    classical_value = 0
+    optimal_strategy = None
+    optimal_encoding_counter = 0
+
+    for i in encodings:
+
+        # The list decoding stores the optimal decoding function for the i-th encoding function.
+        decoding = []
+        functional_value = 0
+
+        for j in sent_message:
+            for k in bob_inputs:
+
+                # majority_list stores m possible sums for each possible output of the decoding
+                # function.
+                majority_list = []
+
+                for l in bob_outputs:
+
+                    # Starting the sum over Alice's inputs for a fixed output of Bob.
+                    partial_sum = 0
+
+                    for x in alice_inputs_converted:
+
+                        if j == i[x[1]]:
+                            partial_sum += bias_tensor[(x[0], k, l)]
+
+                    # Selecting the largest sum.
+                    majority_list.append(partial_sum)
+
+                # The index of the largest sum in majority list retrieves the output of the optimal
+                # decoding function.
+                majority = max(majority_list)
+                functional_value += majority
+                decoding.append(majority_list.index(majority))
+
+        # Now selecting which of the encoding functions produce the largest classical value.
+        if abs(functional_value - classical_value) < const.BOUND:
+            optimal_encoding_counter += 1
+        elif functional_value - classical_value > const.BOUND:
+            optimal_strategy = (i, tuple(decoding))
+            optimal_encoding_counter = 0
+            classical_value = functional_value
+
+    return classical_value, optimal_strategy, optimal_encoding_counter
+
+
+def exhaustive_search_through_decoding(n, d, m, bias_tensor):
+
+    """
+    Exhaustive search through decoding functions
+    --------------------------------------------
+
+    This function computes the classical value of a given RAC by simply iterating over all decoding
+    functions of a Random Access Code. For a fixed decoding function, the best encoding functon is
+    computed. Then it compares what decoding function produces the largest value.
+
+    This method scales with d * m**(n * d + n), so this is the preferable method for most part of
+    the cases. For this reason, this is also the default method for find_classical_value.
+
+    Inputs
+    ------
+    n: an integer.
+        n represents the number of encoded characters.
+    d: an integer.
+        d represents the size of the message to be passed to Bob.
+    m: an integer.
+        m represents the cardinality of the characters of Alice.
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        bias_tensor stores the normalization and the biasing pattern for a given RAC. bias_tensor.
+        keys() are tuples of integers and bias_tensor.values() are floats belonging to the range (0,
+        1]. bias_tensor.values() represent the coefficients of a biased RAC.
+
+    Outputs
+    -------
+    classical_value: a float.
+        The computed classical value for a given RAC.
+    optimal_strategy: a nested tuple of integers.
+        optimal_strategy is made up of two tuples nested within another tuple. The first nested tu-
+        ple is an (n**m)-tuple and represents one of the optimal encoding functions. The second nes-
+        ted tuple is an (d * n)-tuple and represents one of the optimal decoding functions.
+    optimal_decoding_counter: an integer.
+        The total number of different decoding functions achieving the computed value.
+    """
+
+    # Enumerating all decoding functions.
+    decodings = product(range(m), repeat=d * n)
+
+    # Defining the ranges for the summations.
+    alice_inputs = list(product(range(m), repeat=n))
+    bob_inputs = range(n)
+    sent_message = range(d)
+
+    # Initializing variables.
+    classical_value = 0
+    optimal_strategy = None
+    optimal_encoding_counter = 0
+
+    for i in decodings:
+
+        encoding = []
+        functional_value = 0
+
+        for j in alice_inputs:
+
+            majority_list = []
+
+            for k in sent_message:
+
+                partial_sum = 0
+
+                for l in bob_inputs:
+
+                    b = i[k * n + l]
+                    partial_sum += bias_tensor[(j, l, b)]
+
+                majority_list.append(partial_sum)
+
+            majority = max(majority_list)
+            functional_value += majority
+            encoding.append(majority_list.index(majority))
+
+        if abs(functional_value - classical_value) < const.BOUND:
+            optimal_decoding_counter += 1
+        elif functional_value - classical_value > const.BOUND:
+            optimal_strategy = (tuple(encoding), i)
+            optimal_decoding_counter = 0
+            classical_value = functional_value
+
+    return classical_value, optimal_strategy, optimal_decoding_counter
 
 
 def classical_printings(report):
@@ -1511,13 +1700,11 @@ def classical_printings(report):
     report: a dictionary.
         report contains the following keys:
         n: an integer.
-            It represents the number of encoded characters.
-        dimension: an integer.
-            It represents the size of the message to be passed to Bob. It also represents the dimen-
-            sion of the quantum system once the decodings are transformed to measurements.
-        outcomes: an integer.
-            It represents the cardinality of the characters of Alice. It also represents the number
-            of outcomes once the decodings are transformed to measurements.
+            n represents the number of encoded characters.
+        d: an integer.
+            d represents the size of the message to be passed to Bob.
+        m: an integer.
+            m represents the cardinality of the characters of Alice.
         bias: a string or an empty variable.
             It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL",
             "B_ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None,
@@ -1527,20 +1714,19 @@ def classical_printings(report):
             This variable carries the weight with which the RAC is biased. If `bias` consists on a
             single-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists
             on a multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
-        through decodings: a boolean.
-            It encodes whether the used method was exhaustive search or search through decodings.
-            The produced report is different for each of the methods.
+        method: an integer.
+            classical_printings produce different reports depending on the method used.
         total time: a float.
             The total time of computation for a given method.
         classical value: a float.
             The classical value computed for the given RAC.
-        optimal strategy: a tuple of integers.
-            The first optimal strategy found that achieves the computed value. If through decodings=
-            True, 'optimal strategy' corresponds to a single tuple of integers representing the a
-            decoding strategy. If False, 'optimal strategy' corresponds to two tuples representing
-            the encoding and the decoding strategy, respectively.
+        optimal strategy: a nested tuple of integers.
+            optimal strategy is made up of two tuples nested within another tuple. The first nested
+            tuple is an (n**m)-tuple and represents one of the optimal encoding functions. The se-
+            cond nested tuple is an (d * n)-tuple and represents one of the optimal decoding func-
+            tions.
         optimal strategies number: a positive integer.
-            The total number of strategies achieving the computed value.
+            The total number of different strategies achieving the computed value.
     """
 
     # This command allows printing superscripts in the prompt.
@@ -1562,11 +1748,14 @@ def classical_printings(report):
         + f"\n"
     )
 
-    checked_str = report["outcomes"] ** (report["dimension"] * report["n"])
-    if not report["through decodings"]:
-        checked_str = (
-            report["dimension"] ** (report["outcomes"] ** report["n"]) * checked_str
+    if report["method"] == 0:
+        checked_str = report["d"] ** (report["m"] ** report["n"]) * report["m"] ** (
+            report["d"] * report["n"]
         )
+    elif report["method"] == 1:
+        checked_str = report["d"] ** (report["m"] ** report["n"])
+    elif report["method"] == 2:
+        checked_str = report["m"] ** (report["d"] * report["n"])
 
     print(f"Total time of computation: {round(report['total time'], 6)} s")
     print(f"Total number of strategies checked: {checked_str}")
@@ -1595,29 +1784,34 @@ def classical_printings(report):
 
     print(
         f"Computation of the classical value for the "
-        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 RAC:"
+        + f"{report['n']}{str(report['m']).translate(superscript)}-->1 RAC:"
         + f" {round(report['classical value'], 12)}"
     )
 
-    print(
-        f"Number of decoding strategies achieving the computed value: "
-        + f"{report['optimal strategies number']}\n"
-        if report["through decodings"]
-        else f"Number of strategies achieving the computed value: "
-        + f"{report['optimal strategies number']}\n"
-    )
+    if report["method"] == 0:
+        print(
+            f"Number of strategies achieving the computed value: "
+            + f"{report['optimal strategies number']}\n"
+        )
+    elif report["method"] == 1:
+        print(
+            f"Number of encoding functions achieving the computed value: "
+            + f"{report['optimal strategies number']}\n"
+        )
+    elif report["method"] == 2:
+        print(
+            f"Number of decoding functions achieving the computed value: "
+            + f"{report['optimal strategies number']}\n"
+        )
 
     print(
         colors.CYAN + f"First strategy found achieving the computed value" + colors.END
     )
 
-    if report["through decodings"]:
-        print(f"Decoding: {report['optimal strategy']}")
-    else:
-        print(
-            f"Encoding: {report['optimal strategy'][0]}\n"
-            + f"Decoding: {report['optimal strategy'][1]}"
-        )
+    print(
+        f"Encoding: {report['optimal strategy'][0]}\n"
+        + f"Decoding: {report['optimal strategy'][1]}"
+    )
 
     # Printing the footer of the report.
     print("")
