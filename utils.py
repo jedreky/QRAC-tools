@@ -7,7 +7,7 @@
 # version = '1.0'
 # ==================================================================================================
 """This file contains the main functions that produce an estimation to the quantum and classical va-
-lues of a QRAC."""
+lues of a RAC."""
 # ==================================================================================================
 # Imports: time, cvxpy, numpy, scipy, itertools and warnings.
 # ==================================================================================================
@@ -199,7 +199,7 @@ def find_opt_prep(n, d, m, M, bias):
     bias: a dictionary of size n * m ** (n + 1). bias.keys() are (n + 2)-tuples. bias.values() are
     floats.
         The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
-        bias in a given QRAC.
+        bias in a given RAC.
 
     Output
     ------
@@ -286,7 +286,7 @@ def find_opt_meas(n, d, m, optimal_preps, bias, mosek_accuracy):
     This function performs the third step of the see-saw algorithm by optimizing all of the measure-
     ments of Bob.
 
-    In a QRAC, the optimization can be made independently for each measurement. For this reason,
+    In a RAC, the optimization can be made independently for each measurement. For this reason,
     this function sums the preparations over the inputs of Alice, so the resulting operator is inde-
     pendent of her inputs. This allows the optimization to be carried out independently for each
     measurement.
@@ -311,7 +311,7 @@ def find_opt_meas(n, d, m, optimal_preps, bias, mosek_accuracy):
     bias: a dictionary of size n * m ** (n + 1). bias.keys() are (n + 2)-tuples. bias.values() are
     floats.
         The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
-        bias in a given QRAC.
+        bias in a given RAC.
     mosek_accuracy: a float.
         Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
         MOSEK. Here it is used for the primal and the dual problem. It is passed as a parameter to
@@ -320,7 +320,7 @@ def find_opt_meas(n, d, m, optimal_preps, bias, mosek_accuracy):
     Output
     ------
     problem_value: a float
-        The optimized value of the QRAC functional for a single step of the see-saw algorithm.
+        The optimized value of the RAC functional for a single step of the see-saw algorithm.
     M: a list of n lists. Each sub-list of M contains m matrices of size d x d.
         M represents a list with n d-dimensional m-outcome measurements after optimization.
     """
@@ -457,7 +457,7 @@ def optimize_meas(d, m, opt_preps_sum, mosek_accuracy):
     return prob.value, M_vars
 
 
-def find_optimal_value(
+def perform_seesaw(
     n: int,
     d: int,
     seeds: int,
@@ -470,13 +470,14 @@ def find_optimal_value(
     prob_bound: float = const.PROB_BOUND,
     meas_bound: float = const.BOUND,
     mosek_accuracy: float = const.MOSEK_ACCURACY,
+    max_iterations: int = const.ITERATIONS,
 ):
     """
-    Find the optimal value
-    ----------------------
+    Perform see-saw
+    ---------------
 
-    The objective of find_optimal_value is to estimate either the quantum or the classical value of
-    a nˆm --> 1 QRAC whose dimension of the state preparations is d. Besides the three integers n, m
+    The objective of perform_seesaw is to estimate either the quantum or the classical value of a
+    nˆm --> 1 RAC whose dimension of the state preparations is d. Besides the three integers n, m
     and d, the user must input the desired number of starting points in the variable seeds. For each
     starting point, the code generates a random POVM and uses it to determine the optimal prepara-
     tions. After iterating over all starting points, it returns the largest optimal value obtained.
@@ -484,8 +485,8 @@ def find_optimal_value(
     variable diagonal equals to True or False. If True, this function forces the random measurements
     to be diagonal matrices, so that that no quantum advantage is observed.
 
-    find_optimal_value relies on a see-saw optimization to estimate the quantum and classical values
-    for a QRAC. This algorithm can be summarized in a few elementary steps, as follows:
+    perform_seesaw relies on a see-saw optimization to estimate the quantum and classical values for
+    a RAC. This algorithm can be summarized in a few elementary steps, as follows:
 
         1. Create a set of n random measurements with m outcomes acting in dimension d.
         2. For this set of measurements, find the set optimal preparations using `find_opt_prep`.
@@ -493,13 +494,13 @@ def find_optimal_value(
         _opt_meas`.
         4. Check the convergence of variables prob_value and M. In negative case, return to step 2.
 
-    Once the see-saw procedure is over, find_optimal_value prints a detailed report with relevant
-    information about the computation and the optimal set of measurements. This report can be disa-
-    bled by setting the variable verbose = False. In this case, find_optimal_value still returns the
-    same information, but now in the form of a dictionary, `report`, allowing the user to manipulate
-    these data.
+    Once the see-saw procedure is over, perform_seesaw prints a detailed report with relevant infor-
+    mation about the computation and the optimal set of measurements. This report can be disabled by
+    setting the variable verbose = False. In this case, perform_seesaw still returns the same infor-
+    mation, but now in the form of a dictionary, `report`, allowing the user to manipulate these da-
+    ta.
 
-    Also, find_optimal_value allows the user to introduce bias in a given QRAC. It can be controlled
+    Also, perform_seesaw allows the user to introduce bias in a given RAC. It can be controlled
     by the variables `bias` and `weight`, which can be inputted in the argument of find_optimal_va-
     lue. Check the documentation of generate_bias function for more details.
 
@@ -516,24 +517,24 @@ def find_optimal_value(
         sets m = d.
     bias: a string or an empty variable.
         It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL", "B_
-        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the QRAC
+        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the RAC
         is unbiased. Check the documentation of the `generate_bias` function for more details.
     weight: a float or a list/tuple of floats.
-        This variable carries the weight with which the QRAC is biased. If `bias` consists on a sin-
+        This variable carries the weight with which the RAC is biased. If `bias` consists on a sin-
         gle-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists on a
         multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
     bias_tensor: a dictionary with n * m**(n + 1) entries.
-        bias_tensor is an optional variable that can be inputted when the user wants to compute a
-        biased QRAC scenario different of the ones comprised by the `bias` variable. bias_tensor.ke
-        ys() are tuples of integers and bias_tensor.values() are floats belonging to the range (0,1]
-        that encode the normalization of a biased QRAC.
+        bias_tensor is a variable that can be inputted when the user wants to compute a biased RAC
+        scenario different of the ones comprised by generate_bias. bias_tensor.keys() are tuples of
+        integers and bias_tensor.values() are floats belonging to the range (0,1] that encode the
+        normalization of a biased RAC.
     diagonal: a boolean.
-        If True, find_optimal_value produces diagonal random measurements as the starting point for
-        the see-saw algorithm. Since all measurements are diagonal at the same basis, no quantum ad-
-        vantage is produced in this case. If false, the random measurements correspond to POVMs.
+        If True, perform_seesaw produces diagonal random measurements as the starting point for the
+        see-saw algorithm. Since all measurements are diagonal at the same basis, no quantum advan-
+        tage is produced in this case. If false, the random measurements correspond to POVMs.
     verbose: a boolean.
         If True, verbose activates the function `printings` which produces a report about the compu-
-        tation. If False, it makes find_optimal_value returns the same information in the dictionary
+        tation. If False, it makes perform_seesaw returns the same information in the dictionary
         `report`.
     prob_bound: a float.
         Convergence criterion for the variable prob_value. When the difference between prob_value
@@ -545,6 +546,9 @@ def find_optimal_value(
     mosek_accuracy: a float.
         Feasibility tolerance used by the interior-point optimizer for conic problems in the solver
         MOSEK. Here it is used for the primal and the dual problem.
+    max_iterations: an integer.
+        Maximum number of iterations allowed for the see-saw algorithm. It guarantees that the pro-
+        cedure will always finish. The default is 200.
 
     Output
     ------
@@ -562,8 +566,8 @@ def find_optimal_value(
     if m is None:
         m = d
 
-    # Creating an empty dictionary report. If verbose = True, find_optimal_value prints the informa-
-    # tion contained in the report. If not, it returns report.
+    # Creating an empty dictionary report. If verbose = True, perform_seesaw prints the information
+    # contained in the report. If not, it returns report.
     report = {}
 
     # Saving the input data in the dictionary.
@@ -580,52 +584,14 @@ def find_optimal_value(
     report["optimal value"] = 0
     report["optimal measurements"] = 0
 
-    # If the user has not provided any bias_tensor, then it is generated by generate_bias. If not,
-    # the code asserts if the inputted bias_tensor has the correct form.
-    if bias_tensor is None:
-        bias_tensor = generate_bias(n, m, bias, weight)
-    else:
-        assert isinstance(bias_tensor, dict), "bias_tensor must be a dicitonary"
-        assert len(bias_tensor) == n * m ** (
-            n + 1
-        ), "len(bias_tensor) must be n * m**(n + 1)"
-        assert all(
-            isinstance(i, (int, float)) for i in list(bias_tensor.values())
-        ), "bias_tensor.values() must be ints or floats"
-
-        tuples = list(product(product(range(0, m), repeat=n), range(0, n), range(0, m)))
-
-        assert (
-            list(bias_tensor.keys()) == tuples
-        ), "bias_tensor.keys() format not supported"
-
-        if np.abs(sum(bias_tensor.values()) - 1) > const.BOUND:
-            warnings.warn(
-                colors.RED
-                + "\nbias_tensor is not normalized. The result cannot be interpreted as a probabili"
-                + "ty\n"
-                + colors.END
-            )
-        if any(i < 0 for i in list(bias_tensor.values())):
-            warnings.warn(
-                colors.RED
-                + "\nSome elements of bias_tensor are negative. The result cannot be interpreted as"
-                + " a probability\n"
-                + colors.END
-            )
-
-        non_qrac_tuples = []
-        for i in tuples:
-            if i[2] != i[0][i[1]]:
-                non_qrac_tuples.append(i)
-        for i in non_qrac_tuples:
-            if bias_tensor[i] != 0:
-                warnings.warn(colors.RED + "\nThis is not a QRAC\n" + colors.END)
-                break
+    # Function read_bias checks whether the input bias parameters are consistent an returns one bias
+    # tensor to the variable bias_tensor.
+    bias_tensor = read_bias(n, m, bias, bias_tensor, weight)
 
     # Initializing empty lists. times_list stores the total time for each seed. iterations_list sto-
     # res the number of iterations of the see-saw algorithm for each seed. optimal_values stores the
-    # optimal values for each seed.
+    # optimal values for each seed. converge_list stores boolean variables informing whether, for a
+    # given seed, the problem value and measurements converged or not.
     times_list = []
     iterations_list = []
     optimal_values = []
@@ -648,11 +614,14 @@ def find_optimal_value(
         max_norm_difference = 1
         iter_count = 0
 
-        # For the measurements, we either stop when max_norm_difference is smaller than meas_bound
-        # or when the number of iterations is bigger than the constant const.ITERATIONS.
-        while (abs(previous_prob_value - prob_value) > prob_bound) or (
-            max_norm_difference > meas_bound and iter_count < const.ITERATIONS
-        ):
+        # This loop finishes when both the objective function and the variables of the SDP converged
+        # below an appropriate threshold. For the objective function, this threshold is prob_bound,
+        # and for the variables it is meas_bound. If the objective function or the variables did not
+        # converge before max_iterations, this loop is also finished.
+        while (
+            abs(previous_prob_value - prob_value) > prob_bound
+            or max_norm_difference > meas_bound
+        ) and iter_count < max_iterations:
 
             previous_prob_value = prob_value
 
@@ -680,13 +649,19 @@ def find_optimal_value(
         if prob_value > report["optimal value"]:
             report["optimal value"] = prob_value
             report["optimal measurements"] = M
-            report["best seed number"] = i + 1
+
+            # Checking whether the problem variables converged for the seed producing the largest
+            # problem value.
+            if iter_count == max_iterations:
+                report["best seed number"] = (i + 1, False)
+            else:
+                report["best seed number"] = (i + 1, True)
 
         # Here, the execution finishes for one of the seeds.
         times_list.append(tp.process_time() - start_time)
 
-    # This allows the user to know how good the values produced for each QRAC are. It counts how
-    # many optimal values are close to the largest value, in terms of the solver accuracy.
+    # This allows the user to know how good the values produced for each RAC are. It counts how many
+    # optimal values are close to the largest value, in terms of the solver accuracy.
     close_to_larg_value = 0
     for i in range(seeds):
         if report["optimal value"] - optimal_values[i] < mosek_accuracy:
@@ -708,6 +683,103 @@ def find_optimal_value(
         printings(report)
     else:
         return report
+
+
+def read_bias(n, m, bias, bias_tensor, weight):
+
+    """
+    Read bias
+    ---------
+
+    This function takes as inputs the biasing information entered at either perform_seesaw or per-
+    form_exh_search and asserts that the entered parameters are consistent with the desired problem.
+
+    Aterwards, it returns a dictionary called containing the bias tensor.
+
+    Inputs
+    ------
+    n: an integer.
+        The number of distinct measurements.
+    m: an integer.
+        The number of outcomes for each measurement.
+    bias: a string or an empty variable.
+        It encodes the type of bias desired. Check the documentation of the `generate_bias` function
+        for more details.
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        bias_tensor is a variable that can be inputted when the user wants to compute a biased RAC
+        scenario different of the ones comprised by generate_bias. bias_tensor.keys() are tuples of
+        integers and bias_tensor.values() are floats belonging to the range (0,1] that encode the
+        normalization of a biased RAC.
+
+    Output
+    ------
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        If bias_tensor is None, then it is replaced by the object generate_bias(n, m, bias, weight)
+        and returned. If not, read_bias checks whether bias_tensor is consistent with the n^m --> 1
+        RAC and returns bias_tensor in affirmative case. In negative case, the function raises an
+        error.
+    """
+
+    # Checking whether the user entered `bias` or `bias_tensor`.
+    if bias is not None and bias_tensor is not None:
+
+        raise TypeError("too many arguments. Enter bias or bias_tensor")
+
+    # If bias_tensor is not specified by the user directly, then read_bias create it and return.
+    elif bias_tensor is None:
+
+        return generate_bias(n, m, bias, weight)
+
+    # If bias_tensor is specified by the user, then read_bias asserts if it is consistent with the
+    # proposed RAC.
+    else:
+
+        # Checking whether the inputted bias_tensor is a dictionary of length n * m ** (n + 1) whose
+        # values are floats.
+        assert isinstance(bias_tensor, dict), "bias_tensor must be a dicitonary"
+        assert len(bias_tensor) == n * m ** (
+            n + 1
+        ), "len(bias_tensor) must be n * m**(n + 1)"
+        assert all(
+            isinstance(i, (int, float)) for i in list(bias_tensor.values())
+        ), "bias_tensor.values() must be ints or floats"
+
+        # Now, checking if the keys of bias_tensor are consistent.
+        tuples = list(product(product(range(0, m), repeat=n), range(0, n), range(0, m)))
+
+        assert (
+            list(bias_tensor.keys()) == tuples
+        ), "bias_tensor.keys() format not supported"
+
+        # Checking if bias_tensor is normalized and if its elements are non-negative. In the negati-
+        # ve case, the execution proceeds with a warning.
+        if np.abs(sum(bias_tensor.values()) - 1) > const.BOUND:
+            warnings.warn(
+                colors.RED
+                + "\nbias_tensor is not normalized. The result cannot be interpreted as a probabili"
+                + "ty\n"
+                + colors.END
+            )
+        if any(i < 0 for i in list(bias_tensor.values())):
+            warnings.warn(
+                colors.RED
+                + "\nSome elements of bias_tensor are negative. The result cannot be interpreted as"
+                + " a probability\n"
+                + colors.END
+            )
+
+        # Checking whether the entered bias_tensor represents a RAC. If so, for bias_tensor[i]
+        # should be zero if i[2] != i[0][i[1]].
+        non_rac_tuples = []
+        for i in tuples:
+            if i[2] != i[0][i[1]]:
+                non_rac_tuples.append(i)
+        for i in non_rac_tuples:
+            if bias_tensor[i] != 0:
+                warnings.warn(colors.RED + "\nThis is not a RAC\n" + colors.END)
+                break
+
+        return bias_tensor
 
 
 def printings(report):
@@ -734,10 +806,10 @@ def printings(report):
         bias: a string or an empty variable.
             It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL",
             "B_ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None,
-            the QRAC is unbiased. Check the documentation of the `generate_bias` function for more
+            the RAC is unbiased. Check the documentation of the `generate_bias` function for more
             details.
         weight: a float or a list/tuple of floats.
-            This variable carries the weight with which the QRAC is biased. If `bias` consists on a
+            This variable carries the weight with which the RAC is biased. If `bias` consists on a
             single-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists
             on a multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
         diagonal: a boolean.
@@ -747,12 +819,15 @@ def printings(report):
             Feasibility tolerance used by the interior-point optimizer for conic problems in the
             solver MOSEK. Here it is used for the primal and the dual problem.
         optimal value: a float.
-            The optimal value computed for the given QRAC.
+            The optimal value computed for the given RAC.
         optimal measurements: a list of lists whose elements are d x d matrices.
             optimal measurements contains a nested list. Each sub-list contains the optimal measure-
             ment found after optimization.
-        best seed number: an integer.
-            The seed number that achieves the largest prob_value among all seeds.
+        best seed number: a tuple.
+            This tuple has two entries. The first is the seed number that achieves the largest prob_
+            value among all seeds. The second is a boolean variable which says whether for this seed
+            the problem value and the measurements converged before reaching the maximum number of
+            iterations.
         close to largest value: an integer.
             "close to largest value" informs the user how many seeds produced a value that is less
             than `mosek_accuracy` distant to the largest optimal value found among all seeds.
@@ -766,8 +841,8 @@ def printings(report):
             It contains two keys:
             projective: a numpy array whose elements are boolean.
                 projective is an array of projectiveness for all optimal measurement operators ob-
-                tained in find_optimal_value. True if, for a given measurement operator M, the Fro-
-                benius norm of M² - M is smaller than the constant const.BOUND.
+                tained in perform_seesaw. True if, for a given measurement operator M, the Frobenius
+                norm of M² - M is smaller than the constant const.BOUND.
             projectiveness measure: a numpy array whose elements are floats.
                 It contains the measure of projectiveness that corresponds to the Frobenius norm of
                 M² - M, for a given measurement operator M.
@@ -783,7 +858,7 @@ def printings(report):
 
     # Printing the header.
     print(
-        f"\n" + f"=" * 80 + f"\n" + f" " * 32 + f"QRAC-tools v1.0\n" + f"=" * 80 + f"\n"
+        f"\n" + f"=" * 80 + f"\n" + f" " * 33 + f"RAC-tools v1.0\n" + f"=" * 80 + f"\n"
     )
 
     # Printing the first part of the report
@@ -816,19 +891,26 @@ def printings(report):
         colors.BOLD
         + colors.FAINT
         + f"-" * 15
-        + f" Analysis of the optimal realization for seed #{report['best seed number']} "
+        + f" Analysis of the optimal realization for seed #{report['best seed number'][0]} "
         + f"-" * 16
         + colors.END
         + f"\n"
-        if report["best seed number"] < 10
+        if report["best seed number"][0] < 10
         else colors.BOLD
         + colors.FAINT
         + f"-" * 15
-        + f" Analysis of the optimal realization for seed #{report['best seed number']} "
+        + f" Analysis of the optimal realization for seed #{report['best seed number'][0]} "
         + f"-" * 15
         + colors.END
         + f"\n"
     )
+
+    if not report["best seed number"][1]:
+        warnings.warn(
+            colors.RED
+            + f"\nmaximum number of iterations reached for seed #{report['best seed number'][0]}\n"
+            + colors.END
+        )
 
     if report["bias"] is not None:
         print(
@@ -840,12 +922,12 @@ def printings(report):
 
     print(
         f"Estimation of the classical value for the "
-        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
+        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 RAC:"
         + f" {report['optimal value'].round(12)}"
         + f"\n"
         if report["diagonal"]
         else f"Estimation of the quantum value for the "
-        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 QRAC:"
+        + f"{report['n']}{str(report['outcomes']).translate(superscript)}-->1 RAC:"
         + f" {report['optimal value'].round(12)}"
         + f"\n"
     )
@@ -883,10 +965,10 @@ def printings(report):
 
         for i in keys:
             print(
-                f"M[{str(i[0])}] and M[{str(i[1])}]:  MUM\t\t"
+                f"M[{str(i[0])}] and M[{str(i[1])}]:  MUB\t\t"
                 f"{str(float('%.3g' % report['MUB check'][i]['MUM measure']))}"
                 if report["MUB check"][i]["MUM"]
-                else f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUM\t\t"
+                else f"M[{str(i[0])}] and M[{str(i[1])}]:  Not MUB\t\t"
                 f"{str(float('%.3g' % report['MUB check'][i]['MUM measure']))}"
             )
 
@@ -902,7 +984,7 @@ def check_meas_status(n, d, m, M):
     ------------------------
 
     This function consists of several checks and small numerical calculations for the optimal set of
-    measurements obtained in find_optimal_value. These procedures are summarized as follows:
+    measurements obtained in perform_seesaw. These procedures are summarized as follows:
 
     1.  Check if the measurement operators are Hermitian.
     2.  Check if the measurement operators are positive semidefinite.
@@ -932,8 +1014,8 @@ def check_meas_status(n, d, m, M):
         It contains two keys:
         projective: a numpy array whose elements are boolean.
             projective is an array of projectiveness for all optimal measurement operators obtained
-            in find_optimal_value. True if, for a given measurement operator M, the Frobenius norm
-            of M² - M is smaller than the constant const.BOUND.
+            in perform_seesaw. True if, for a given measurement operator M, the Frobenius norm of M²
+            - M is smaller than the constant const.BOUND.
         projetiveness measure: a numpy array whose elements are floats.
             It contains the measure of projectiveness that corresponds to the Frobenius norm of M² -
             M, for a given measurement operator M.
@@ -1086,10 +1168,10 @@ def generate_bias(n, m, bias, weight):
 
     where x_0, x_1, ... , x_{n - 1} and b range from 0 to m - 1 and y ranges from 0 to n - 1. The
     object bias_tensor[i] represents an order-(n + 2) tensor encoding the bias and the normalization
-    in a given n^m --> 1 QRAC.
+    in a given n^m --> 1 RAC.
 
-    If bias = None, the QRAC is unbiased and all of the n * m ** n elements in bias_tensor are uni-
-    form. For a QRAC, the elements of bias_tensor are strictly bigger than zero whenever i[2] ==
+    If bias = None, the RAC is unbiased and all of the n * m ** n elements in bias_tensor are uni-
+    form. For a RAC, the elements of bias_tensor are strictly bigger than zero whenever i[2] ==
     i[0][i[1]].
 
     If bias is not None, then it must assume one of the following types:
@@ -1129,7 +1211,7 @@ def generate_bias(n, m, bias, weight):
         The number of outcomes for each measurement.
     bias: a string or an empty variable.
         It encodes the type of bias desired. There are eight possibilities: "Y_ONE", "Y_ALL", "B_
-        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the QRAC
+        ONE", "B_ALL", "X_ONE", "X_DIAG", "X_CHESS" and "X_PLANE", "Y_ONE". If bias = None, the RAC
         is unbiased.
     weight: a float or a list of floats of size m.
         The variable weight carries the amount of bias the user desires in a given input (x or y) or
@@ -1142,7 +1224,7 @@ def generate_bias(n, m, bias, weight):
     bias: a dictionary of size n * m**(n + 1). bias.keys() are (n + 2)-tuples. bias.values() are
     floats.
         The dictionary bias represents a order-(n + 2) tensor encoding the normalization and the
-        bias in a given QRAC.
+        bias in a given RAC.
     """
 
     # First asserting the input parameters.
@@ -1157,25 +1239,25 @@ def generate_bias(n, m, bias, weight):
     )
 
     if bias is not None:
-        assert weight is not None, "a value for `weight` must be provided"
+        assert weight is not None, "a value for 'weight' must be provided"
 
     if bias in valid_bias_types_sw:
-        assert 0 <= weight <= 1, "`weight` must range between 0 and 1."
+        assert 0 <= weight <= 1, "'weight' must range between 0 and 1."
 
     elif bias in valid_bias_types_mw:
 
         assert isinstance(
             weight, (list, tuple)
-        ), "For Y_ALL and B_ALL bias, `weight` must be a list or a tuple"
+        ), "For Y_ALL and B_ALL bias, 'weight' must be a list or a tuple"
 
         if bias == "Y_ALL":
 
-            assert len(weight) == n, "the expected size of `weight` is n"
+            assert len(weight) == n, "the expected size of 'weight' is n"
             assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
         elif bias == "B_ALL":
 
-            assert len(weight) == m, "the expected size of `weight` is m"
+            assert len(weight) == m, "the expected size of 'weight' is m"
             assert round(sum(weight), 7) == 1, "the weights must sum to one"
 
     # Initializing an empty dicitonary.
@@ -1186,7 +1268,7 @@ def generate_bias(n, m, bias, weight):
 
     for i in indexes:
 
-        # Enforcing the QRAC condition.
+        # Enforcing the RAC condition.
         if i[2] == i[0][i[1]]:
 
             # The elements must be normalized. There are n * m**n elements in total.
@@ -1280,32 +1362,34 @@ def generate_bias(n, m, bias, weight):
     return bias_tensor
 
 
-def find_classical_value(
+def perform_search(
     n: int,
     d: int,
     m: int = None,
     bias: str = None,
     weight=None,
+    bias_tensor=None,
     method=2,
     verbose=True,
 ):
 
     """
-    Find the classical value
-    ------------------------
+    Perform exhaustive search
+    -------------------------
 
-    find_classical_value is operated similarly as find_optimal_value. Differently from the latter,
-    this function computes the classical value of a given RAC by three different methods. The first
-    method is done by exhaustive search, so it simply selects the enconding and decoding functions
-    that produce the best performance for the given RAC. The second method fix an encoding function
-    and computes the best decoding function for this fixed encoding. Then it selects which of the
-    encoding functions produce the best performance. The third method is the inverse of the second:
-    first it fixes the decoding function, then it computes the best encoding function and maximizes
-    over the decoding functions.
+    perform_search accepts inputs in the same way as perform_seesaw, which means that the operation
+    of this function by the user is also similar to perform_seesaw. Differently from the latter,
+    this function computes the only the classical value of a given RAC by three different methods.
+    The first method is done by exhaustive search, so it simply selects the encoding and decoding
+    functions that produce the best performance for the given RAC. The second method fix an encoding
+    function and computes the best decoding function for this fixed encoding. Then it selects which
+    of the encoding functions produce the best performance. The third method is the inverse of the
+    second: first it fixes the decoding function, then it computes the best encoding function and
+    maximizes over the decoding functions.
 
     In a RAC, one desires to encode n characters ranging from 0 to m - 1 into another character
     ranging from 0 to d - 1. In total, there are d**(m**n) encoding functions and m**(d * n) decod-
-    ing functions. Thus, the first method scales scales with the product of the number of enconding
+    ing functions. Thus, the first method scales scales with the product of the number of encoding
     and decoding functions, i.e., it scales double exponentially. The second method also scales dou-
     ble exponentially, but the search over the decoding functions is linear with respect to n, d,
     and m. The third method scales with d * m**(n * (d + 1)).
@@ -1326,14 +1410,19 @@ def find_classical_value(
         This variable carries the weight with which the RAC is biased. If `bias` consists on a sin-
         gle-parameter family, weight must be a float ranging from 0 to 1. If `bias` consists on a
         multi-parameter family, weight must be a list (or tuple) of floats summing to 1.
+    bias_tensor: a dictionary with n * m**(n + 1) entries.
+        bias_tensor is a variable that can be inputted when the user wants to compute a biased RAC
+        scenario different of the ones comprised by generate_bias. bias_tensor.keys() are tuples of
+        integers and bias_tensor.values() are floats belonging to the range (0,1] that encode the
+        normalization of a biased RAC.
     method: an integer. 2 by default.
         It simply determines which of the methods to use. method=0 selects the exhaustive search
         over encoding and decoding functions. method=1 selects the exhaustive search through the en-
         coding functions. method=2 selects the exhaustive search through the decoding functions.
     verbose: a boolean.
         If True, verbose activates the function `classical_printings` which produces a report about
-        the computation. If False, find_classical_value returns the same information within the
-        dictionary `report`.
+        the computation. If False, perform_search returns the same information within the dic-
+        tionary `report`.
 
     Outputs
     -------
@@ -1344,14 +1433,16 @@ def find_classical_value(
 
     # Asserting that method is a valid method.
     valid_methods = [0, 1, 2]
-    assert method in valid_methods, "choose a method by entering 0, 1 or 2"
+    assert (
+        method in valid_methods
+    ), f"Unrecognized method {method}; valid choices are: {valid_methods}"
 
     # If no value is attributed for the number of outcomes, then m = d.
     if m is None:
         m = d
 
-    # Creating an empty dictionary report. If verbose = True, find_classical_value prints the infor-
-    # mation contained in the report. If not, it returns report.
+    # Creating an empty dictionary report. If verbose = True, perform_search prints the informa-
+    # tion contained in the report. If not, it returns report.
     report = {}
 
     # Saving the input data in the dictionary.
@@ -1362,7 +1453,7 @@ def find_classical_value(
     report["weight"] = weight
     report["method"] = method
 
-    bias_tensor = generate_bias(n, m, bias, weight)
+    bias_tensor = read_bias(n, m, bias, bias_tensor, weight)
 
     # Now, the code simply selects the method entered by the user.
     if method == 0:
@@ -1450,17 +1541,8 @@ def exhaustive_search(n, d, m, bias_tensor):
     )
 
     # Now defining the ranges for the summations below.
-    alice_inputs = product(range(m), repeat=n)
+    alice_inputs = list(product(range(m), repeat=n))
     bob_inputs = range(n)
-
-    # For Alice's inputs, it is useful to convert the tuple (x_0, x_1, ..., x_{n - 1}) into a deci-
-    # mal number. So the last entry in every element of alice_inputs_converted contains this infor-
-    # mation.
-    alice_inputs_converted = []
-    count = 0
-    for i in alice_inputs:
-        alice_inputs_converted.append((i, count))
-        count += 1
 
     # Initializing variables.
     classical_value = 0
@@ -1472,29 +1554,30 @@ def exhaustive_search(n, d, m, bias_tensor):
         # Functional value for fixed encoding and decoding functions.
         functional_value = 0
 
-        for j in alice_inputs_converted:
+        for counter, j in enumerate(alice_inputs):
             for k in bob_inputs:
 
                 # Selecting what messaging digit will be send to Bob.
-                message = i[0][j[1]]
+                message = i[0][counter]
 
                 # Based on the received digit, Bob produces output b.
                 b = i[1][message * n + k]
 
-                # This is simply the RAC condition.
-                if b == j[0][k]:
-
-                    # This is a deterministic strategy. If the RAC condition is satisfied, then we
-                    # sum bias_tensor.
-                    functional_value += bias_tensor[(j[0], k, b)]
+                # Now we simply sum the elements bias_tensor[(j, k, b)].
+                functional_value += bias_tensor[(j, k, b)]
 
         # Now, selecting the largest value.
-        if abs(functional_value - classical_value) < const.BOUND:
-            optimal_strategies_counter += 1
-        elif functional_value - classical_value > const.BOUND:
-            optimal_strategy = i
-            optimal_strategies_counter = 0
-            classical_value = functional_value
+        (
+            classical_value,
+            optimal_strategies_counter,
+            optimal_strategy,
+        ) = check_classical_realization(
+            functional_value,
+            classical_value,
+            optimal_strategies_counter,
+            optimal_strategy,
+            i,
+        )
 
     return classical_value, optimal_strategy, optimal_strategies_counter
 
@@ -1541,17 +1624,10 @@ def exhaustive_search_through_encoding(n, d, m, bias_tensor):
     encodings = product(range(d), repeat=m**n)
 
     # Defining the ranges for the summations.
-    alice_inputs = product(range(m), repeat=n)
+    alice_inputs = list(product(range(m), repeat=n))
     bob_inputs = range(n)
     sent_message = range(d)
     bob_outputs = range(m)
-
-    # Here is also convenient to convert the tuple (x_0, x_1, ..., x_{n - 1}) into a decimal number.
-    alice_inputs_converted = []
-    count = 0
-    for i in alice_inputs:
-        alice_inputs_converted.append((i, count))
-        count += 1
 
     # Initializing variables.
     classical_value = 0
@@ -1576,10 +1652,10 @@ def exhaustive_search_through_encoding(n, d, m, bias_tensor):
                     # Starting the sum over Alice's inputs for a fixed output of Bob.
                     partial_sum = 0
 
-                    for x in alice_inputs_converted:
+                    for counter, x in enumerate(alice_inputs):
 
-                        if j == i[x[1]]:
-                            partial_sum += bias_tensor[(x[0], k, l)]
+                        if j == i[counter]:
+                            partial_sum += bias_tensor[(x, k, l)]
 
                     # Selecting the largest sum.
                     majority_list.append(partial_sum)
@@ -1590,13 +1666,18 @@ def exhaustive_search_through_encoding(n, d, m, bias_tensor):
                 functional_value += majority
                 decoding.append(majority_list.index(majority))
 
-        # Now selecting which of the encoding functions produce the largest classical value.
-        if abs(functional_value - classical_value) < const.BOUND:
-            optimal_encoding_counter += 1
-        elif functional_value - classical_value > const.BOUND:
-            optimal_strategy = (i, tuple(decoding))
-            optimal_encoding_counter = 0
-            classical_value = functional_value
+        # Now checking whether the current realization is the best so far.
+        (
+            classical_value,
+            optimal_encoding_counter,
+            optimal_strategy,
+        ) = check_classical_realization(
+            functional_value,
+            classical_value,
+            optimal_encoding_counter,
+            optimal_strategy,
+            (i, tuple(decoding)),
+        )
 
     return classical_value, optimal_strategy, optimal_encoding_counter
 
@@ -1612,7 +1693,7 @@ def exhaustive_search_through_decoding(n, d, m, bias_tensor):
     computed. Then it compares what decoding function produces the largest value.
 
     This method scales with d * m**(n * d + n), so this is the preferable method for most part of
-    the cases. For this reason, this is also the default method for find_classical_value.
+    the cases. For this reason, this is also the default method for perform_search.
 
     Inputs
     ------
@@ -1650,7 +1731,7 @@ def exhaustive_search_through_decoding(n, d, m, bias_tensor):
     # Initializing variables.
     classical_value = 0
     optimal_strategy = None
-    optimal_encoding_counter = 0
+    optimal_decoding_counter = 0
 
     for i in decodings:
 
@@ -1676,24 +1757,90 @@ def exhaustive_search_through_decoding(n, d, m, bias_tensor):
             functional_value += majority
             encoding.append(majority_list.index(majority))
 
-        if abs(functional_value - classical_value) < const.BOUND:
-            optimal_decoding_counter += 1
-        elif functional_value - classical_value > const.BOUND:
-            optimal_strategy = (tuple(encoding), i)
-            optimal_decoding_counter = 0
-            classical_value = functional_value
+        (
+            classical_value,
+            optimal_decoding_counter,
+            optimal_strategy,
+        ) = check_classical_realization(
+            functional_value,
+            classical_value,
+            optimal_decoding_counter,
+            optimal_strategy,
+            (tuple(encoding), i),
+        )
 
     return classical_value, optimal_strategy, optimal_decoding_counter
+
+
+def check_classical_realization(
+    new_value, old_value, strategy_counter, old_strategy, new_strategy
+):
+
+    """
+    Check classical realization
+    ---------------------------
+
+    This function is an auxiliary function to exhaustive_search(), exhaustive_search_through_enco-
+    ding() and exhaustive_search_through_decoding(). It checks whether a particular realization
+    yields a value that is greater than the ones found in previous iterations of these functions.
+
+    If new_value == old_value, it simply updates the counter strategy_counter, meaning that there is
+    another realization that achieves the supposed classical value. If new_value > old_value, it up-
+    dates old_value, and if new_value < old_value, it simply returns the same input parameters.
+
+    Inputs
+    ------
+    new_value: a float.
+        The value produced by the encoding and decoding functions of new_strategy. It corresponds to
+        the value obtained by the current iteration of exhaustive_search(), exhaustive_search_th-
+        rough_encoding() and exhaustive_search_through_decoding().
+    old_value: a float.
+        The value produced by the encoding and decoding functions of old_strategy. It corresponds to
+        the largest value found in previous iterations.
+    strategy_counter: an integer.
+        A counter of how many strategies achieve old_value.
+    old_strategy: a nested tuple of integers.
+        A pair of enconding and decoding functions that achieve the value in old_value.
+    new_strategy: a nested tuple of integers.
+        A pair of enconding and decoding functions that achieve the value in new_value.
+
+    Outputs
+    -------
+    new_value: a float.
+        Returned if new_value > classical_value.
+    old_value: a float.
+        Returned if new_value =< classical_value.
+    strategy_counter: an integer.
+        Returned at any case. Incremented by 1, if new_value == old_value.
+    new_strategy: a nested tuple of integers.
+        Returned if new_value > classical_value.
+    old_strategy: a nested tuple of integers.
+        Returned if new_value =< classical_value.
+    """
+
+    if abs(new_value - old_value) < const.BOUND:
+
+        strategy_counter += 1
+
+        return old_value, strategy_counter, old_strategy
+
+    elif new_value - old_value > const.BOUND:
+
+        strategy_counter = 1
+
+        return new_value, strategy_counter, new_strategy
+
+    return old_value, strategy_counter, old_strategy
 
 
 def classical_printings(report):
 
     """
-    Printings for find_classical_value
-    ----------------------------------
+    Printings for perform_search
+    ----------------------------
 
-    This function simply prints a report for the computation of find_classical_value. It also con-
-    sists of two parts: a summary of the computation and an analysis of the optimal realization.
+    This function simply prints a report for the computation of perform_search. It also consists of
+    two parts: a summary of the computation and an analysis of the optimal realization.
 
     Inputs
     ------
@@ -1729,12 +1876,13 @@ def classical_printings(report):
             The total number of different strategies achieving the computed value.
     """
 
-    # This command allows printing superscripts in the prompt.
+    # These commands allow printing super and subscripts in the prompt.
     superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
+    subscript = str.maketrans("0123456789", "₀₁₂₃₄₅₆₇₈₉")
 
     # Printing the header.
     print(
-        f"\n" + f"=" * 80 + f"\n" + f" " * 32 + f"QRAC-tools v1.0\n" + f"=" * 80 + f"\n"
+        f"\n" + f"=" * 80 + f"\n" + f" " * 33 + f"RAC-tools v1.0\n" + f"=" * 80 + f"\n"
     )
 
     # Printing the first part of the report
@@ -1748,19 +1896,24 @@ def classical_printings(report):
         + f"\n"
     )
 
+    print(f"Total time of computation: {round(report['total time'], 6)} s")
+
     if report["method"] == 0:
         checked_str = report["d"] ** (report["m"] ** report["n"]) * report["m"] ** (
             report["d"] * report["n"]
         )
+        print(f"Total number of encoding/decoding functions: {checked_str}")
+
     elif report["method"] == 1:
         checked_str = report["d"] ** (report["m"] ** report["n"])
+        print(f"Total number of encoding functions: {checked_str}")
+
     elif report["method"] == 2:
         checked_str = report["m"] ** (report["d"] * report["n"])
+        print(f"Total number of decoding functions: {checked_str}")
 
-    print(f"Total time of computation: {round(report['total time'], 6)} s")
-    print(f"Total number of strategies checked: {checked_str}")
     print(
-        f"Average time for each strategy: {round(report['total time'] / checked_str, 6)} s\n"
+        f"Average time per function: {round(report['total time'] / checked_str, 6)} s\n"
     )
 
     # Printing the second part of the report. Analysis of the optimal realization.
@@ -1790,7 +1943,7 @@ def classical_printings(report):
 
     if report["method"] == 0:
         print(
-            f"Number of strategies achieving the computed value: "
+            f"Number of functions achieving the computed value: "
             + f"{report['optimal strategies number']}\n"
         )
     elif report["method"] == 1:
@@ -1805,13 +1958,19 @@ def classical_printings(report):
         )
 
     print(
-        colors.CYAN + f"First strategy found achieving the computed value" + colors.END
+        colors.CYAN
+        + f"First functions found achieving the computed value"
+        + colors.END
     )
 
-    print(
-        f"Encoding: {report['optimal strategy'][0]}\n"
-        + f"Decoding: {report['optimal strategy'][1]}"
-    )
+    decoding = np.reshape(report["optimal strategy"][1], (report["d"], report["n"])).T
+
+    print(f"Encoding: \nE: {list(report['optimal strategy'][0])}\n" + f"Decoding:")
+
+    line = 0
+    for i in decoding:
+        print(f"D{str(line).translate(subscript)}: [" + f",  ".join(map(str, i)) + f"]")
+        line += 1
 
     # Printing the footer of the report.
     print("")

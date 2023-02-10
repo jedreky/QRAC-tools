@@ -22,7 +22,7 @@ MUB_BOUND = 5e-6
 MOSEK_ACCURACY = 1e-13
 
 # Maximal number of iterations for the optimization problem.
-ITERATIONS = 100
+ITERATIONS = 200
 
 # Total number of attempts to generate a valid measurement.
 MEAS_ATTEMPTS = 10
