@@ -13,6 +13,7 @@
 
 import utils as ut
 import numpy as np
+import constants as const
 
 from numpy.random import random
 from numpy.random import uniform
@@ -33,8 +34,8 @@ def printings(value1, value2, n = None, d = None, weight = None):
     Printings
     ---------
 
-    A function to print the expected and computed values for 'find_QRAC_value'. If the difference
-    between these values is smaller than 'difference', then it is printed in green. If not, it is
+    A function to print the expected and computed values for 'perform_seesaw'. If the difference
+    between these values is smaller than 'const.BOUND', then it is printed in green. If not, it is
     printed in red.
 
     Inputs
@@ -44,22 +45,19 @@ def printings(value1, value2, n = None, d = None, weight = None):
     value2: a float.
         The computed value for the QRAC.
     n: an integer.
-        n represents the number of distinct measurements in the QRAC.
+        n represents the number of input characters for a given RAC.
     d: an integer.
-        d represents the number of outcomes for each measurement. In general, d is also taken as the
-        dimension of the measurement operators in the QRAC.
+        d represents the cardinality of the outputs of Bob. In general, d is also taken as the local
+        dimension of the measurement operators in a QRAC.
     weight: a float.
-        'weight' represents the weight with which the QRAC is biased.
+        'weight' represents the weight with which the RAC is biased.
     """
-
-    # Fixing the acceptable difference for expected and computed values to 1e-6.
-    difference = 1e-6
 
     # This command is to allow printing superscripts in the prompt.
     superscript = str.maketrans("0123456789", "⁰¹²³⁴⁵⁶⁷⁸⁹")
 
-    # If the QRAC is biased, so its is desirable to print the weight by which it is biased. So the
-    # printing must be different if no weight is attributed.
+    # If the QRAC is biased, it is desirable to print the weight by which it is biased. So the print
+    # must be different if no weight is attributed.
     if weight == None:
         print(
             colors.CYAN
@@ -76,7 +74,7 @@ def printings(value1, value2, n = None, d = None, weight = None):
             colors.GREEN + colors.BOLD
             + str(float('%.1g' % (value1 - value2)))
             + colors.END
-            if abs(value1 - value2) < difference
+            if abs(value1 - value2) < const.BOUND
             else colors.RED + colors.BOLD
             + str(float('%.1g' % (value1 - value2)))
             + colors.END
@@ -95,7 +93,7 @@ def printings(value1, value2, n = None, d = None, weight = None):
             colors.GREEN + colors.BOLD
             + str(float('%.1g' % (value1 - value2)))
             + colors.END
-            if abs(value1 - value2) < difference
+            if abs(value1 - value2) < const.BOUND
             else colors.RED + colors.BOLD
             + str(float('%.1g' % (value1 - value2)))
             + colors.END
@@ -109,13 +107,13 @@ def test_qubit_qracs(seeds):
     -------------------
 
     This function tests QRACs of the form nˆ2-->1 in which n is a parameter ranging from 2 to 4. It
-    makes use of the function 'find_QRAC_value'.
+    makes use of the function 'perform_seesaw'.
 
     Input
     -----
     seeds: an integer.
         Represents the number of random seeds as the starting point of the see-saw algorithm im the
-        function 'find_QRAC_value'.
+        function 'perform_seesaw'.
 
     Outputs
     -------
@@ -129,10 +127,10 @@ def test_qubit_qracs(seeds):
     Randomness, available in arXiv:0810.2937.
     """
 
-    # These are the theoretical quantum values provided by the literature. For n = 2 and n = 3, the
-    # quantum value is known exactly. For n > 4 these are just conjectured values. For n = 4, the
-    # value below is calculated by using the conjectured measurements for this case, i.e., X, Y, Z
-    # and X, where X, Y, and Z are the Pauli matrices.
+    # These are known quantum values provided by the literature. For n = 2 and n = 3, the quantum
+    # value is known exactly. For n > 5, these are just numerical estimations. For n = 4, the value
+    # below is calculated by using the conjectured measurements for this case, i.e., X, Y, Z and X,
+    # where X, Y, and Z are the Pauli matrices.
     literature_value = {
                         2: (1 + 1 / np.sqrt(2)) / 2,
                         3: (1 + 1 / np.sqrt(3)) / 2,
@@ -149,9 +147,9 @@ def test_qubit_qracs(seeds):
 
     for j in range(2, 5):
 
-        # find_QRAC_value returns a dictionary. Here, only the entry "optimal value" of this dic-
-        # tionary is interesting.
-        computation = ut.find_QRAC_value(j, 2, seeds, verbose = False)
+        # perform_seesaw returns a dictionary. Here, only the entry "optimal value" of this dic-
+        # tionary is used.
+        computation = ut.perform_seesaw(j, 2, seeds, verbose=False)
         printings(literature_value[j], computation["optimal value"], j, 2)
 
 
@@ -162,13 +160,13 @@ def test_higher_dim_qracs(seeds):
     --------------------------------
 
     This function tests QRACs of the form 2ˆd-->1 in which d is a parameter ranging from 3 to 5. It
-    makes use of the function 'find_QRAC_value'.
+    makes use of the function 'perform_seesaw'.
 
     Input
     -----
     seeds: an integer.
         Represents the number of random seeds as the starting point of the see-saw algorithm im the
-        function 'find_QRAC_value'.
+        function 'perform_seesaw'.
 
     Outputs
     -------
@@ -188,34 +186,35 @@ def test_higher_dim_qracs(seeds):
 
     for j in range(3, 6):
 
-        computation = ut.find_QRAC_value(2, j, seeds, verbose = False)
+        computation = ut.perform_seesaw(2, j, seeds, verbose = False)
         printings(literature_value[j], computation["optimal value"], 2, j)
 
 
-def test_YPARAM(seeds):
+def test_Y_ONE(seeds):
 
     """
-    Testing YPARAM bias
+    Testing Y_ONE bias
     -------------------
 
-    This function tests biased 2ˆ2-->1 QRACs. We consider the 'YPARAM' bias in which the 1st entry
-    of Alice is prefered with some weight. Then, we evaluate 'find_QRAC_value' for 3 distinct random
-    weights.
+    This function tests 2^2-->1 biased QRACs. We consider the case 'Y_ONE', in which the 1st char-
+    acter of Alice is prefered with some weight. Then, we evaluate 'perform_seesaw' for 3 distinct
+    random weights.
 
     Input
     -----
     seeds: an integer.
         Represents the number of random seeds as the starting point of the see-saw algorithm im the
-        function 'find_QRAC_value'.
+        function 'perform_seesaw'.
 
     Outputs
     -------
     It prints a list containing the expected quantum value, the computed quantum value and the
-    difference between both values, for each random weight of 'YPARAM' bias.
+    difference between both values, for each weight.
 
     Reference
     ---------
-    The values in 'expected_quantum_value' are to be published soon.
+    The values in 'expected_quantum_value' can be found in the appendix C of:
+    G. P. Alves, N. Gigena and J. Kaniewski, Biased Random Access Codes, to be published soon.
     """
 
     # Defining the 3 random weights with numpy.random.random().
@@ -226,43 +225,44 @@ def test_YPARAM(seeds):
 
     for j in range(0, 3):
 
-        computation = ut.find_QRAC_value(2, 2, seeds,
+        computation = ut.perform_seesaw(2, 2, seeds,
                                             verbose = False,
-                                            bias = "YPARAM",
+                                            bias = "Y_ONE",
                                             weight = random_bias[j])
 
         printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
 
 
-def test_BPARAM(seeds):
+def test_B_ONE(seeds):
 
     """
-    Testing BPARAM bias
+    Testing B_ONE bias
     -------------------
 
-    This function tests biased 2ˆ2-->1 QRACs. We consider the 'BPARAM' bias in which the entry 0 is
-    prefered to be retrieved with some weight. Then, we evaluate 'find_QRAC_value' for 3 distinct
+    This function tests 2^2-->1 biased QRACs. We consider the 'B_ONE' case, in which the output 0 is
+    prefered to be retrieved with some weight. Then, we evaluate 'perform_seesaw' for 4 distinct
     random weights.
 
     Input
     -----
     seeds: an integer.
         Represents the number of random seeds as the starting point of the see-saw algorithm im the
-        function 'find_QRAC_value'.
+        function 'perform_seesaw'.
 
     Outputs
     -------
-    It prints a list containing the expected quantum value, the computed quantum value and the
-    difference between both values, for each random weight of 'BPARAM' bias.
+    It prints a list containing the expected quantum value, the computed quantum value and the dif-
+    ference between both values, for each weight.
 
     Reference
     ---------
-    The values in 'expected_quantum_value' are to be published soon.
+    The values in 'expected_quantum_value' can be found in the appendix C of:
+    G. P. Alves, N. Gigena and J. Kaniewski, Biased Random Access Codes, to be published soon.
     """
 
-    # Not all values of 'weight' produce quantum-advantaged QRACs for the 'BPARAM' bias. The first
-    # and the last elements of random_bias are produced in the intervals where there is no quantum
-    # advantage.
+    # Not all values of 'weight' produce QRACs with quantum advantaged for the 'B_ONE' case. The
+    # first and the last elements of random_bias are produced in the intervals where there is no
+    # quantum advantage.
     random_bias = [
                    uniform(0, (3 - np.sqrt(5)) / 4),
                    uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
@@ -270,31 +270,31 @@ def test_BPARAM(seeds):
                    uniform((1 + np.sqrt(5)) / 4, 1)
                    ]
 
-    # The function expected_BPARAM(i) returns the correct quantum value for the appropriate value of
+    # The function expected_B_ONE(i) returns the correct quantum value for the appropriate value of
     # 'weight'.
-    expected_quantum_value = [expected_BPARAM(i) for i in random_bias]
+    expected_quantum_value = [expected_B_ONE(i) for i in random_bias]
 
     for j in range(0, 4):
 
-        computation = ut.find_QRAC_value(2, 2, seeds,
+        computation = ut.perform_seesaw(2, 2, seeds,
                                             verbose = False,
-                                            bias = "BPARAM",
+                                            bias = "B_ONE",
                                             weight = random_bias[j])
 
         printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
 
 
-def expected_BPARAM(weight):
+def expected_B_ONE(weight):
 
     """
-    An auxiliary function for testing BPARAM. For bias in the retrived entry b, not all values of
+    An auxiliary function for testing B_ONE. For bias in the retrived output b, not all values of
     'weight' produce a QRAC with quantum advantage. In particular, the only range where quantum ad-
     vantage is expected is in the interval [(3 - sqrt(5)) / 4, (1 + sqrt(5)) / 4].
 
     Input
     -----
     weight: a float.
-        'weight' represents the weight with which the QRAC is biased for the BPARAM case.
+        'weight' represents the weight with which the QRAC is biased for the B_ONE case.
 
     Output
     The expected quantum value for the correct range.
@@ -319,14 +319,14 @@ if __name__ == "__main__":
     Main function
     -------------
 
-    This function just select a few cases of QRACs whose quantum value is theoretically known, as
-    follows.
+    This function just select a few cases of quantum RACs (or QRACs) whose quantum value is theore-
+    tically known, as follows.
 
     1. Qubit QRACs. QRACs whose local dimension is 2.
-    2. 2-entries QRACs. Here referred in the function 'test_higher_dim_qracs'. QRACs whose number of
-    entries of Alice is exactly 2.
-    3. 2ˆ2-->1 QRAC with bias in the requested entry y. Here referred in the function 'test_YPARAM'.
-    4. 2ˆ2-->1 QRAC with bias in the retrieved entry b. Here referred in the function 'test_BPARAM'.
+    2. 2-qudits QRACs. Here referred in the function 'test_higher_dim_qracs'. These are QRACs whose
+    number of input characters is 2.
+    3. 2ˆ2-->1 QRAC with bias in the requested input y. Here referred in the function 'test_Y_ONE'.
+    4. 2ˆ2-->1 QRAC with bias in the retrieved output b. Here referred in the function 'test_B_ONE'.
 
     Outputs
     -------
@@ -342,8 +342,8 @@ if __name__ == "__main__":
         "\n"
         + "=" * 80
         + "\n"
-        + " " * 32
-        + "QRAC-tools v1.0\n"
+        + " " * 33
+        + "RAC-tools v1.0\n"
         + "=" * 80
         + "\n")
 
@@ -374,7 +374,7 @@ if __name__ == "__main__":
         + "Testing the y-biased 2\u00b2-->1 QRAC for 3 random weights"
         + colors.END
         )
-    test_YPARAM(seeds)
+    test_Y_ONE(seeds)
 
     print(" ")
 
@@ -384,7 +384,7 @@ if __name__ == "__main__":
         + "Testing the b-biased 2\u00b2-->1 QRAC for 4 random weights"
         + colors.END
         )
-    test_BPARAM(seeds)
+    test_B_ONE(seeds)
 
     # Printing the footer.
     print(
