@@ -1,20 +1,34 @@
-# QRACs
+# Random access codes
 
-A Quantum Random Access Code, mostly known by its acronym QRAC, is a task in which $n$ digits are encoded into a qudit. The aim of this task is to recover one of the digits chosen uniformly at random. A QRAC is generally represented by its parameters $n^d \rightarrow 1$, in which $n$ is the number of digits, and $d$ is the size of the alphabet of digits, as well as the dimension of the qudit.
+Random access code is a compression task in which a string of $n$ characters is encoded in a lower-dimensional system and the goal is to then recover one of the characters chosen at random. In the classical case the storage system is a dit and the encoding and decoding are functions (perhaps non-deterministic). In the quantum case the storage system is a qudit, encoding consists of preparing various qudit states, while decoding consists of performing a quantum measurement.
 
-This program encounters the quantum value of the average success probability for a QRAC by performing a _see-saw_ optimization. This function is implemented in `find_QRAC_value`, in which it is possible to input $n$ and $d$, among other desirable parameters to be used in seesaw optimization.
+We use the notation $n^d \rightarrow 1$ to represent a task in which a string of length $n$ where every character comes from an alphabet of size $d$ is encoded into a classical or quantum system of dimension $d$.
 
-In addition, our code allows introducing bias in the QRAC. In a nutshell, we say that a QRAC is biased when the assumption that the digits are chosen uniformly is ignored. In this case, the user can choose among certain distributions for the digits.
+This package provides functions to find classical value of a RAC (using exhaustive methods and see-saw optimisation) as well as lower bounds on the quantum value (see-saw). Moreover, one can investigate RACs in which the distribution of inputs is not uniform. More specifically, we provide access to a number of simple and natural families of biases (which usually admit a small number of parameters).
+
+This package accompanies a paper entiteld "Biased Random Access Codes" by Gabriel Pereira Alves, Nicolas Gigena, and Jędrzej Kaniewski available at [arXiv](https://arxiv.org/abs/xyz.1234).
+
+## Requirements
+
+This package requires `cvxpy`, `numpy` and `scipy`. Moreover, while `cvxpy` comes with some pre-installed solvers, we have not found them particularly reliable. We strongly recommend you to install the solver __MOSEK__, which requires a license that can be obtained [here](https://www.mosek.com/products/academic-licenses/).
+
+All these packages can be installed by running:
+
+```
+pip install -r requirements.txt
+```
 
 ## Examples
 
-1. *The simplest QRAC:* $2^2 \rightarrow 1$. In this task, $2$ bits are encoded into a qubit. The quantum value of the average success probability can be retrieved by evoking
+All the functions mentioned below are available in the `utils.py` file.
+
+1. *The simplest QRAC:* $2^2 \rightarrow 1$. In this task, $2$ bits are encoded into a qubit. The quantum value of the average success probability can be found by calling
 
 ```
-> find_QRAC_value(n = 2, d = 2, seeds = 5)
+> find_QRAC_value(n=2, d=2, seeds=5)
 ```
 <ul>
-where <em>n</em> denotes the number of digits to be encoded and <em>d</em> denotes the size of Alice's alphabet. In this case, we are using bits. The entry <em>seeds</em> is an optimization parameter that indicates the number of starting points for the optimization. For each starting point, a random measurement is generated and inputted as the zero-th iteration for the see-saw algorithm. In the end of the computation, the code outputs the largest average success probability obtained over all starting points, producing the following report.
+where <em>n</em> denotes the number of digits to be encoded and <em>d</em> denotes the size of Alice's alphabet. In this case, we are using bits. The entry <em>seeds</em> is an optimization parameter that indicates the number of starting points for the optimization. For each starting point, a random measurement is generated and input as the zero-th iteration for the see-saw algorithm. In the end of the computation, the code outputs the largest average success probability obtained over all starting points, producing the following report.
 </ul>
 
 ```
@@ -64,10 +78,10 @@ $$
 
 the two measurements can be constructed out of a pair of Mutually Unbiased Basis. In this case, the number in the second column of "Mutually unbiasedness of measurements" represents the largest Frobenius norm of the operators $d\, P_i Q_j P_i - P_i$ and $d\, Q_j P_i Q_j - Q_j$, for all $i$ and $j$.
 
-2. *Increasing the dimension of the quantum system*. In the `find_QRAC_value` procedure, the user is also allowed to specify different values for the dimension of the quantum system and the size of Alice's alphabet. Usually, in a QRAC, these values are the same. So if we are dealing with qubits, we assume that Alice is encoding bits. However, it does not need to be so. Let us say that one desires to encode 2 bits into a qutrit, for instance. In this case, we are still dealing with the $2^2 \rightarrow 1$ QRAC, but we are "cheating" in a certain way, because we are allowing the quantum system to be bigger in dimension. The quantum value of the average success probability for this example can be retrieved by evoking
+2. *Increasing the dimension of the quantum system*. In the `find_QRAC_value` procedure, the user is also allowed to specify different values for the dimension of the quantum system and the size of Alice's alphabet. Usually, in a RAC, these values are the same. So if we are dealing with qubits, we assume that Alice is encoding bits. However, it does not need to be so. Let us say that one desires to encode 2 bits into a qutrit, for instance. In this case, we are still dealing with the $2^2 \rightarrow 1$ RAC, but we are "cheating" in a certain way, because we are allowing the quantum system to be bigger in dimension. The quantum value of the average success probability for this example can be found by calling
 
 ```
-> find_QRAC_value(n = 2, d = 3, seeds = 5, m = 2)
+> find_QRAC_value(n=2, d=3, seeds=5, m=2)
 ```
 <ul>
 where <em>n</em> represents the number of encoded digits, <em>d</em> is the dimension of the quantum system and <em>m</em> now is the size of Alice's alphabet. In this case, we are still using bits. The second part of the report should be as follows.
@@ -91,12 +105,12 @@ M[1, 1]:  Projective		2.37e-08
 ------------------------------ End of computation ------------------------------
 ```
 <ul>
-Clearly we obtain a bigger average success probability for this problem, as it should be.
+Clearly we obtain a bigger average success probability for this problem, as one should expect.
 </ul>
 
 Note that, unlike the previous example, here the variable *d* assumes the role of the dimension of the quantum system, while *m* is the size of Alice's alphabet. Also, note that before we did not need to specify *m*. As in the standard QRAC these two variables are the same, if *m* is not provided, the code sets `m = d` automatically. Having said that, we decided to keep *d* as the dimension of the quantum system, to avoid misconceptions.
 
-3. *Experimenting bias in the requested digit*. Now, let us say that in the $2^2 \rightarrow 1$ QRAC the user wants to retrieve the first digit of Alice's string with weight `weight`. Clearly, the quantum value of the average success probability will not be the same, since we have preference for the first of the digits. We can can calculate it by setting some value to `weight` and indicating the kind of `bias` one desires:
+3. *Experimenting bias in the requested digit*. Now, let us say that in the $2^2 \rightarrow 1$ QRAC the user wants to retrieve the first digit of Alice's string with weight `weight`. Clearly, the quantum value of the average success probability will not be the same, since we have preference for the first of the digits. We can calculate it by setting some value to `weight` and indicating the kind of `bias` one desires:
 
 ```
 > find_QRAC_value(n = 2, d = 2, seeds = 5, bias = "YPARAM", weight = 0.75)
@@ -133,7 +147,7 @@ M[0] and M[1]:  MUM		2.27e-11
 ------------------------------ End of computation ------------------------------
 ```
 
-In this case, "YPARAM" stands for a single-parameter bias in the requested digit, which is, by default, named as *y* in many QRAC scenarios. Check the documentation of the `generate_bias` function for alternative biases.
+In this case, "YPARAM" stands for a single-parameter bias in the requested digit, which is, by default, named as *y* in many RAC scenarios. Check the documentation of the `generate_bias` function for alternative biases.
 
 4. *Trying the testing script*. Finally, the user is also allowed to compare the produced results with the ones found in the literature. By typing
 
@@ -186,18 +200,10 @@ Expected quantum value: 0.967768   Computed value: 0.967768   Difference:  6e-11
 ------------------------------ End of computation ------------------------------
 ```
 <ul>
-The first set of QRACs correspond to <em>d</em> = <em>m</em> = 2 and <em>n</em> = 2, 3 and 4. The second set can be retrieved by varying <em>d</em> and </em>m</em> so that <em>d</em> = <em>m</em> and keeping <em>n</em> = 2. Similarly, the third and fourth sets of QRACs can be obtained by setting the bias as "YPARAM", as in example 3, and "BPARAM", respectively.
+The first set of RACs correspond to <em>d</em> = <em>m</em> = 2 and <em>n</em> = 2, 3 and 4. The second set can be retrieved by varying <em>d</em> and </em>m</em> so that <em>d</em> = <em>m</em> and keeping <em>n</em> = 2. Similarly, the third and fourth sets of QRACs can be obtained by setting the bias as "YPARAM", as in example 3, and "BPARAM", respectively.
 </ul>
 
-## Requirements
 
-This script requires the packages `time`, `cvxpy`, `numpy`, `scipy` and `itertools`. Moreover, while `cvxpy` comes with some pre-installed solvers, we have not found them particularly reliable. We strongly recommend you to install the solver __MOSEK__, which requires a license that can be obtained [here](https://www.mosek.com/products/academic-licenses/).
-
-The packages mentioned above can be installed by running:
-
-```
-pip install -r requirements.txt
-```
 
 ## References
 
