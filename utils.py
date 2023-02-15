@@ -94,7 +94,7 @@ def generate_random_measurements(n, d, m, diagonal):
                         # random() generates a random number in the interval (0, 1].
                         diagonal_matrix[k, k] = random()
 
-                    # By construction, diagonal_matrixthey is positive-semidefinite and hermitian.
+                    # By construction, diagonal_matrix is positive-semidefinite and hermitian.
                     partial_meas.append(diagonal_matrix)
 
             else:
@@ -1272,7 +1272,7 @@ def generate_bias(n, m, bias, weight):
         if i[2] == i[0][i[1]]:
 
             # The elements must be normalized. There are n * m**n elements in total.
-            bias_tensor[i] = 1 / (n * m**n)
+            bias_tensor[i] = 1 / (n * m ** n)
 
             # Separating in cases. If bias is None, none of the below cases will match, and the re-
             # sulting tensor will be only normalized.
@@ -1310,13 +1310,13 @@ def generate_bias(n, m, bias, weight):
 
                 # For bias in the input string the normalization factor is m**n.
                 if i[0] == (0,) * n:
-                    bias_tensor[i] = (m**n) * weight * bias_tensor[i]
+                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i]
                 else:
 
                     # If i[0] != (0,0,...,0), we distribute 1 - weight over the m**n - 1 remaining
                     # strings.
                     bias_tensor[i] = (
-                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - 1)
+                        (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - 1)
                     )
 
             elif bias == "X_DIAG":
@@ -1325,10 +1325,10 @@ def generate_bias(n, m, bias, weight):
 
                     # There are m elements in the diagonal of i[0], so we distribute `weight` uni-
                     # formly over these m elements.
-                    bias_tensor[i] = (m**n) * weight * bias_tensor[i] / m
+                    bias_tensor[i] = (m ** n) * weight * bias_tensor[i] / m
                 else:
                     bias_tensor[i] = (
-                        (m**n) * (1 - weight) * bias_tensor[i] / (m**n - m)
+                        (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n - m)
                     )
 
             elif bias == "X_CHESS":
@@ -1343,11 +1343,11 @@ def generate_bias(n, m, bias, weight):
                 else:
                     if sum(i[0]) % 2 == 1:
                         bias_tensor[i] = (
-                            2 * (m**n) * weight * bias_tensor[i] / (m**n - 1)
+                            2 * (m ** n) * weight * bias_tensor[i] / (m ** n - 1)
                         )
                     else:
                         bias_tensor[i] = (
-                            2 * (m**n) * (1 - weight) * bias_tensor[i] / (m**n + 1)
+                            2 * (m ** n) * (1 - weight) * bias_tensor[i] / (m ** n + 1)
                         )
 
             elif bias == "X_PLANE":
@@ -1537,7 +1537,7 @@ def exhaustive_search(n, d, m, bias_tensor):
     # Enumerating all possible encoding and decoding functions. The first product represents all
     # possible encoding functions, while the second represents all possible decoding functions.
     strategies = product(
-        product(range(d), repeat=m**n), product(range(m), repeat=d * n)
+        product(range(d), repeat=m ** n), product(range(m), repeat=d * n)
     )
 
     # Now defining the ranges for the summations below.
@@ -1621,7 +1621,7 @@ def exhaustive_search_through_encoding(n, d, m, bias_tensor):
     """
 
     # Enumerating all encoding functions.
-    encodings = product(range(d), repeat=m**n)
+    encodings = product(range(d), repeat=m ** n)
 
     # Defining the ranges for the summations.
     alice_inputs = list(product(range(m), repeat=n))
@@ -1958,9 +1958,7 @@ def classical_printings(report):
         )
 
     print(
-        colors.CYAN
-        + f"First functions found achieving the computed value"
-        + colors.END
+        colors.CYAN + f"First functions found achieving the computed value" + colors.END
     )
 
     decoding = np.reshape(report["optimal strategy"][1], (report["d"], report["n"])).T

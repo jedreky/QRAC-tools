@@ -20,15 +20,15 @@ from numpy.random import uniform
 
 
 class colors:
-    CYAN =  '\033[96m'
-    GREEN = '\033[92m'
-    RED =   '\033[91m'
-    BOLD =  '\033[1m'
-    FAINT = '\033[2m'
-    END =   '\033[0m'
+    CYAN = "\033[96m"
+    GREEN = "\033[92m"
+    RED = "\033[91m"
+    BOLD = "\033[1m"
+    FAINT = "\033[2m"
+    END = "\033[0m"
 
 
-def printings(value1, value2, n = None, d = None, weight = None):
+def printings(value1, value2, n=None, d=None, weight=None):
 
     """
     Printings
@@ -58,7 +58,7 @@ def printings(value1, value2, n = None, d = None, weight = None):
 
     # If the QRAC is biased, it is desirable to print the weight by which it is biased. So the print
     # must be different if no weight is attributed.
-    if weight == None:
+    if weight is None:
         print(
             colors.CYAN
             + "For the "
@@ -66,38 +66,42 @@ def printings(value1, value2, n = None, d = None, weight = None):
             + str(d).translate(superscript)
             + "-->1 QRAC:"
             + colors.END
-            +"\nLiterature value: "
+            + "\nLiterature value: "
             + str("{:.7f}".format(value1))
             + "   Computed value: "
             + str("{:.7f}".format(value2))
             + "   Difference: ",
-            colors.GREEN + colors.BOLD
-            + str(float('%.1g' % (value1 - value2)))
+            colors.GREEN
+            + colors.BOLD
+            + str(float("%.1g" % (value1 - value2)))
             + colors.END
             if abs(value1 - value2) < const.BOUND
-            else colors.RED + colors.BOLD
-            + str(float('%.1g' % (value1 - value2)))
-            + colors.END
-            )
+            else colors.RED
+            + colors.BOLD
+            + str(float("%.1g" % (value1 - value2)))
+            + colors.END,
+        )
     else:
         print(
             colors.CYAN
-            +"For weight = "
+            + "For weight = "
             + str("{:.3f}".format(weight))
             + colors.END
-            +":\nExpected quantum value: "
+            + ":\nExpected quantum value: "
             + str("{:.6f}".format(value1))
             + "   Computed value: "
             + str("{:.6f}".format(value2))
             + "   Difference: ",
-            colors.GREEN + colors.BOLD
-            + str(float('%.1g' % (value1 - value2)))
+            colors.GREEN
+            + colors.BOLD
+            + str(float("%.1g" % (value1 - value2)))
             + colors.END
             if abs(value1 - value2) < const.BOUND
-            else colors.RED + colors.BOLD
-            + str(float('%.1g' % (value1 - value2)))
-            + colors.END
-            )
+            else colors.RED
+            + colors.BOLD
+            + str(float("%.1g" % (value1 - value2)))
+            + colors.END,
+        )
 
 
 def test_qubit_qracs(seeds):
@@ -132,18 +136,18 @@ def test_qubit_qracs(seeds):
     # below is calculated by using the conjectured measurements for this case, i.e., X, Y, Z and X,
     # where X, Y, and Z are the Pauli matrices.
     literature_value = {
-                        2: (1 + 1 / np.sqrt(2)) / 2,
-                        3: (1 + 1 / np.sqrt(3)) / 2,
-                        4:  0.7414814565722667,
-                        5:  0.713578,
-                        6:  0.694046,
-                        7:  0.678638,
-                        8:  0.666633,
-                        9:  0.656893,
-                        10: 0.648200,
-                        11: 0.641051,
-                        12: 0.634871
-                        }
+        2: (1 + 1 / np.sqrt(2)) / 2,
+        3: (1 + 1 / np.sqrt(3)) / 2,
+        4: 0.7414814565722667,
+        5: 0.713578,
+        6: 0.694046,
+        7: 0.678638,
+        8: 0.666633,
+        9: 0.656893,
+        10: 0.648200,
+        11: 0.641051,
+        12: 0.634871,
+    }
 
     for j in range(2, 5):
 
@@ -186,7 +190,7 @@ def test_higher_dim_qracs(seeds):
 
     for j in range(3, 6):
 
-        computation = ut.perform_seesaw(2, j, seeds, verbose = False)
+        computation = ut.perform_seesaw(2, j, seeds, verbose=False)
         printings(literature_value[j], computation["optimal value"], 2, j)
 
 
@@ -221,16 +225,21 @@ def test_Y_ONE(seeds):
     random_bias = [random() for i in range(0, 3)]
 
     # Since this value is not in the literature yet, I'm naming it 'expected_quantum_value'.
-    expected_quantum_value = [0.5 + 0.5 * np.sqrt(2 * i ** 2 - 2 * i + 1) for i in random_bias]
+    expected_quantum_value = [
+        0.5 + 0.5 * np.sqrt(2 * i ** 2 - 2 * i + 1) for i in random_bias
+    ]
 
     for j in range(0, 3):
 
-        computation = ut.perform_seesaw(2, 2, seeds,
-                                            verbose = False,
-                                            bias = "Y_ONE",
-                                            weight = random_bias[j])
+        computation = ut.perform_seesaw(
+            2, 2, seeds, verbose=False, bias="Y_ONE", weight=random_bias[j]
+        )
 
-        printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
+        printings(
+            expected_quantum_value[j],
+            computation["optimal value"],
+            weight=random_bias[j],
+        )
 
 
 def test_B_ONE(seeds):
@@ -264,11 +273,11 @@ def test_B_ONE(seeds):
     # first and the last elements of random_bias are produced in the intervals where there is no
     # quantum advantage.
     random_bias = [
-                   uniform(0, (3 - np.sqrt(5)) / 4),
-                   uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
-                   uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
-                   uniform((1 + np.sqrt(5)) / 4, 1)
-                   ]
+        uniform(0, (3 - np.sqrt(5)) / 4),
+        uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
+        uniform((3 - np.sqrt(5)) / 4, (1 + np.sqrt(5)) / 4),
+        uniform((1 + np.sqrt(5)) / 4, 1),
+    ]
 
     # The function expected_B_ONE(i) returns the correct quantum value for the appropriate value of
     # 'weight'.
@@ -276,12 +285,15 @@ def test_B_ONE(seeds):
 
     for j in range(0, 4):
 
-        computation = ut.perform_seesaw(2, 2, seeds,
-                                            verbose = False,
-                                            bias = "B_ONE",
-                                            weight = random_bias[j])
+        computation = ut.perform_seesaw(
+            2, 2, seeds, verbose=False, bias="B_ONE", weight=random_bias[j]
+        )
 
-        printings(expected_quantum_value[j], computation["optimal value"], weight = random_bias[j])
+        printings(
+            expected_quantum_value[j],
+            computation["optimal value"],
+            weight=random_bias[j],
+        )
 
 
 def expected_B_ONE(weight):
@@ -338,32 +350,15 @@ if __name__ == "__main__":
     seeds = 5
 
     # Printing the header.
-    print(
-        "\n"
-        + "=" * 80
-        + "\n"
-        + " " * 33
-        + "RAC-tools v1.0\n"
-        + "=" * 80
-        + "\n")
+    print("\n" + "=" * 80 + "\n" + " " * 33 + "RAC-tools v1.0\n" + "=" * 80 + "\n")
 
     # From now on, I just split the function in the cases I want to test.
-    print(
-        colors.FAINT
-        + colors.BOLD
-        + "Testing qubit QRACs"
-        + colors.END
-        )
+    print(colors.FAINT + colors.BOLD + "Testing qubit QRACs" + colors.END)
     test_qubit_qracs(seeds)
 
     print(" ")
 
-    print(
-        colors.FAINT
-        + colors.BOLD
-        + "Testing higher dimensional QRACs"
-        + colors.END
-        )
+    print(colors.FAINT + colors.BOLD + "Testing higher dimensional QRACs" + colors.END)
     test_higher_dim_qracs(seeds)
 
     print(" ")
@@ -373,7 +368,7 @@ if __name__ == "__main__":
         + colors.BOLD
         + "Testing the y-biased 2\u00b2-->1 QRAC for 3 random weights"
         + colors.END
-        )
+    )
     test_Y_ONE(seeds)
 
     print(" ")
@@ -383,13 +378,8 @@ if __name__ == "__main__":
         + colors.BOLD
         + "Testing the b-biased 2\u00b2-->1 QRAC for 4 random weights"
         + colors.END
-        )
+    )
     test_B_ONE(seeds)
 
     # Printing the footer.
-    print(
-        '\n'
-        + '-' * 30
-        + " End of computation "
-        + '-' * 30
-        )
+    print("\n" + "-" * 30 + " End of computation " + "-" * 30)
