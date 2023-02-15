@@ -23,6 +23,7 @@ import warnings
 
 from numpy.random import rand
 from numpy.random import random
+from scipy.linalg import inv
 from scipy.linalg import sqrtm
 from scipy.stats import unitary_group
 from itertools import product
@@ -130,7 +131,7 @@ def generate_random_measurements(n, d, m, diagonal):
 
                 # This operator is used to rescale the partial_meas list. It corresponds to the in-
                 # verse square root of partial_sum.
-                inv_sqrt = nalg.inv(sqrtm(partial_sum))
+                inv_sqrt = inv(sqrtm(partial_sum))
 
                 # This loop rescales all operators in partial_meas.
                 error = False
