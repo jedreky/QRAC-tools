@@ -25,7 +25,7 @@ In the following, we introduce a requirements section and the three main compone
 
 `perform_seesaw` implements an iterative two-step see-saw procedure that, starting from a random set of measurements, finds the optimal preparations for the given measurements in the first step, and the optimal measurements for these preparations in the following. The first step involves solving an eigenvalue problem, whereas the second one involves the solution of a semidefinite problem (SDP).
 
-This package accompanies a paper entitled _Biased Random Access Codes_ by Gabriel Pereira Alves, Nicolas Gigena, and Jędrzej Kaniewski available at [arXiv:xyz.1234](https://arxiv.org/abs/xyz.1234).
+This package accompanies a paper entitled _Biased Random Access Codes_ by Gabriel Pereira Alves, Nicolas Gigena, and Jędrzej Kaniewski available at [arXiv:2302.08494](https://doi.org/10.48550/arXiv.2302.08494).
 
 ## Requirements
 
@@ -173,7 +173,7 @@ In the second part of the report, the user can see the computed classical value 
 
 ## The `perform_seesaw` function
 
-This function implements the see-saw algorithm described in _Biased Random Access Codes_ [arXiv:xyz.1234](https://arxiv.org/abs/xyz.1234), and its goal is to provide lower bounds to the quantum value of a given $n^m \smash{\overset{d}{\mapsto}} 1$ $b$-RAC. Here we will not provide details about the see-saw algorithm itself, but technical details concerning the operation of `perform_seesaw`.
+This function implements the see-saw algorithm described in _Biased Random Access Codes_ [arXiv:2302.08494](https://doi.org/10.48550/arXiv.2302.08494), and its goal is to provide lower bounds to the quantum value of a given $n^m \smash{\overset{d}{\mapsto}} 1$ $b$-RAC. Here we will not provide details about the see-saw algorithm itself, but technical details concerning the operation of `perform_seesaw`.
 
 As is the case with `perform_search`, the `perform_seesaw` function takes as argument the integers defining the scenario, $n$, $d$ and $m$ and the bias tensor, either as a dictionary or via one of the aforementioned built-in options. The user is also asked to pass as an argument the number of starting points for the algorithm by means of the variable `seeds`. Moreover, it is possible to use this function to compute a lower bound to the classical value, by means of the variable `diagonal`. If `diagonal=True`, the function initialize the see-saw algorithm with random diagonal measurements, and the optimization is then restricted to operators which are diagonal in the computational basis. By default `diagonal=False`, and the algorithm optimizes the functional value over POVM measurements.
 
